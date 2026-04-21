@@ -1,0 +1,14 @@
+path: C:/Users/Admin/Traffix-v0/ai_models/triple_riding
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 3
+names: ['motorcycle', 'person', 'rider_region']
+
+roboflow:
+  workspace: krokky
+  project: triple-riding-detection-fix
+  version: 15
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/krokky/triple-riding-detection-fix/dataset/15

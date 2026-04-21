@@ -1,0 +1,54 @@
+# ======================
+# Dependencies
+# ======================
+node_modules/
+
+# ======================
+# Environment Variables
+# ======================
+.env
+backend/.env
+frontend/.env
+
+# ======================
+# Build / Production
+# ======================
+build/
+dist/
+
+# ======================
+# Logs
+# ======================
+logs/
+*.log
+npm-debug.log*
+
+# ======================
+# OS Files
+# ======================
+.DS_Store
+Thumbs.db
+
+# ======================
+# Uploads & AI Outputs
+# ======================
+uploads/
+runs/
+venv/
+
+# 🚀 IGNORE ONLY MODEL WEIGHTS (NOT CODE)
+*.pt
+*.onnx
+*.engine
+
+# ======================
+# Cache / Temp
+# ======================
+.cache/
+temp/
+.tmp/
+
+# ======================
+# Editor
+# ======================
+.vscode/

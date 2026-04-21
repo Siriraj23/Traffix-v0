@@ -1,0 +1,6 @@
+path: `
+train: C:/Users/Admin/Traffix-v0/ai_models/plate_dataset/train/images
+val: C:/Users/Admin/Traffix-v0/ai_models/plate_dataset/valid/images
+
+nc: 1
+names: ['number_plate']

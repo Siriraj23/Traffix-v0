@@ -1,0 +1,14 @@
+path: C:/Users/Admin/Traffix-v0/ai_models/vehicle_detection
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 9
+names: ['Auto', 'Bike', 'Bus', 'Car', 'No_Helmet', 'Overloading', 'Tractot', 'Travller', 'Truck']
+
+roboflow:
+  workspace: bckjjs
+  project: vechile-detection-r0ucq
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/bckjjs/vechile-detection-r0ucq/dataset/1

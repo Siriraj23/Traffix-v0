@@ -1,0 +1,14 @@
+path: C:/Users/Admin/Traffix-v0/ai_models/overloading
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 2
+names: ['normal-truck', 'overloaded-truck']
+
+roboflow:
+  workspace: priyanshu-xenxw
+  project: overloaded-vechile
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/priyanshu-xenxw/overloaded-vechile/dataset/1

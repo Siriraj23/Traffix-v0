@@ -1,0 +1,102 @@
+/* Authority Specific Styles */
+.authority-card {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  color: white;
+}
+
+.authority-card .profile-name,
+.authority-card .profile-email {
+  color: white;
+}
+
+.authority-avatar {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+
+.authority-badge {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.5rem;
+  border-radius: 10px;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.authority-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.authority-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.stat-box {
+  background: #f8f9fa;
+  padding: 0.75rem;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.stat-box svg {
+  font-size: 1.25rem;
+}
+
+.stat-box strong {
+  font-size: 1rem;
+  display: block;
+  color: #1f2937;
+}
+
+.stat-box small {
+  font-size: 0.65rem;
+  color: #6c757d;
+}
+
+/* Authority Stats Cards */
+.authority-stats-card {
+  border-left: 4px solid;
+  transition: transform 0.3s ease;
+}
+
+.authority-stats-card:hover {
+  transform: translateY(-5px);
+}
+
+/* Quick Actions */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.quick-action-btn {
+  padding: 1rem;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.quick-action-btn:hover {
+  transform: translateY(-3px);
+}
+
+@media (max-width: 768px) {
+  .authority-stats {
+    grid-template-columns: 1fr;
+  }
+  
+  .stat-box {
+    justify-content: space-between;
+  }
+  
+  .quick-actions-grid {
+    grid-template-columns: 1fr;
+  }
+}

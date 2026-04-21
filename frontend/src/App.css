@@ -1,0 +1,198 @@
+/* ==================== ROOT ==================== */
+:root {
+  --primary: #4f46e5;
+  --primary-light: #6366f1;
+  --secondary: #06b6d4;
+
+  --bg-gradient: linear-gradient(135deg, #eef2ff 0%, #e0f2fe 100%);
+  --card-bg: rgba(255, 255, 255, 0.9);
+
+  --text-dark: #1f2937;
+  --text-light: #6b7280;
+
+  --border: #e5e7eb;
+
+  --radius: 12px;
+  --shadow: 0 8px 20px rgba(0,0,0,0.05);
+}
+
+/* ==================== BASE ==================== */
+body {
+  font-family: 'Inter', sans-serif;
+
+  /* 🌟 LIGHT PROFESSIONAL GRADIENT */
+  background: linear-gradient(135deg, #eef2ff 0%, #e0f2fe 100%);
+
+  min-height: 100vh;
+  color: var(--text-dark);
+}
+
+.App {
+  min-height: 100vh;
+}
+
+/* ==================== NAVBAR ==================== */
+.navbar {
+  background: linear-gradient(135deg, #4f46e5, #06b6d4);
+  padding: 0.9rem 1rem;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+}
+
+.navbar-brand {
+  font-weight: 700;
+  color: white;
+}
+
+.navbar-nav .nav-link {
+  color: rgba(255,255,255,0.9);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+}
+
+.navbar-nav .nav-link:hover {
+  background: rgba(255,255,255,0.15);
+  color: white;
+}
+
+/* ==================== CARDS ==================== */
+.card {
+  background: var(--card-bg);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  transition: 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 25px rgba(0,0,0,0.08);
+}
+
+.card-header {
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.card-body {
+  padding: 1.4rem;
+}
+
+/* ==================== BUTTONS ==================== */
+.btn {
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  border: none;
+  transition: 0.3s ease;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #4f46e5, #06b6d4);
+  color: white;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(79,70,229,0.3);
+}
+
+.btn-outline-primary {
+  border: 1px solid #4f46e5;
+  color: #4f46e5;
+}
+
+.btn-outline-primary:hover {
+  background: linear-gradient(135deg, #4f46e5, #06b6d4);
+  color: white;
+}
+
+/* ==================== TABLE ==================== */
+.table thead {
+  background: #f1f5f9;
+}
+
+.table th {
+  font-size: 0.75rem;
+  color: var(--text-light);
+  text-transform: uppercase;
+}
+
+.table tbody tr:hover {
+  background: #f9fafb;
+}
+
+/* ==================== BADGES ==================== */
+.badge {
+  font-size: 0.75rem;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.bg-success { background: #10b981 !important; }
+.bg-warning { background: #f59e0b !important; }
+.bg-danger { background: #ef4444 !important; }
+.bg-info { background: #06b6d4 !important; }
+
+/* ==================== FORMS ==================== */
+.form-control {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.form-control:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79,70,229,0.15);
+}
+
+/* ==================== STATS CARDS ==================== */
+.stats-card {
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.95);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  padding: 1.4rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.stats-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 4px;
+  width: 100%;
+  background: linear-gradient(90deg, #4f46e5, #06b6d4);
+}
+
+.stats-card h3 {
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.stats-card p {
+  color: var(--text-light);
+  font-size: 0.85rem;
+}
+
+/* ==================== ALERT ==================== */
+.alert {
+  border-radius: var(--radius);
+}
+
+/* ==================== LOADING ==================== */
+.spinner-border {
+  width: 2rem;
+  height: 2rem;
+  color: #4f46e5;
+}
+
+/* ==================== UTIL ==================== */
+.text-muted {
+  color: var(--text-light) !important;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
