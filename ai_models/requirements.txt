@@ -1,19 +1,33 @@
-# Computer Vision
+# =========================
+# CORE AI / COMPUTER VISION
+# =========================
 opencv-python>=4.8.0
 numpy>=1.24.0
 pillow>=10.0.0
 
+# =========================
 # YOLOv8 (Ultralytics)
+# =========================
 ultralytics>=8.0.0
 torch>=2.0.0
 torchvision>=0.15.0
 
-# Web/API
-flask>=2.3.0
-flask-cors>=4.0.0
-requests>=2.31.0
+# =========================
+# OCR (Number Plate Reading)
+# =========================
+easyocr>=1.7.0
 
-# Utilities
+# =========================
+# FASTAPI (API SERVER)
+# =========================
+fastapi>=0.100.0
+uvicorn>=0.23.0
+python-multipart>=0.0.6
+
+# =========================
+# UTILITIES
+# =========================
+requests>=2.31.0
 pandas>=2.0.0
-scikit-learn>=1.3.0
 matplotlib>=3.7.0
+scikit-learn>=1.3.0
