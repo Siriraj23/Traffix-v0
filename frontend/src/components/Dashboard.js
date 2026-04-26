@@ -15,6 +15,21 @@ import {
 } from 'chart.js';
 import { dashboardAPI } from '../api/api';
 import { useNavigate } from 'react-router-dom';
+import { 
+  FaExclamationTriangle, 
+  FaCalendarCheck, 
+  FaHourglassHalf, 
+  FaMoneyBillWave,
+  FaEye,
+  FaEdit,
+  FaTrash,
+  FaSync,
+  FaCloudUploadAlt,
+  FaChartBar,
+  FaChartLine,
+  FaListUl,
+  FaInbox
+} from 'react-icons/fa';
 import './Dashboard.css';
 
 ChartJS.register(
@@ -53,13 +68,15 @@ const Dashboard = () => {
       setLoading(true);
       setError('');
       
+      // Types to EXCLUDE from graph
+      const excludedTypes = ['overspeeding', 'no_seatbelt', 'signal_violation'];
+      
       console.log(`📊 Fetching dashboard data... (Attempt ${retryCount + 1})`);
       
       const response = await dashboardAPI.getStats();
       console.log('✅ API Response:', response);
       
       if (response && response.success) {
-        // Handle both response formats
         const responseData = response.data || response;
         
         setStats({
@@ -69,7 +86,11 @@ const Dashboard = () => {
           totalFines: responseData.stats?.totalFines || 0
         });
         
-        setByType(responseData.byType || []);
+        // Filter out excluded types
+        const filteredTypes = (responseData.byType || []).filter(
+          item => !excludedTypes.includes(item._id)
+        );
+        setByType(filteredTypes);
         
         // Fetch recent violations separately
         const recentResponse = await dashboardAPI.getRecentViolations(10);
@@ -79,7 +100,6 @@ const Dashboard = () => {
           generateDailyData(Array.isArray(recentData) ? recentData : []);
         }
         
-        // Dispatch event for other components
         window.dispatchEvent(new CustomEvent('dashboardDataLoaded', { 
           detail: responseData 
         }));
@@ -132,10 +152,8 @@ const Dashboard = () => {
   useEffect(() => {
     fetchDashboardData();
     
-    // Auto-refresh every 30 seconds
     const interval = setInterval(fetchDashboardData, 30000);
     
-    // Listen for violation updates
     const handleViolationsUpdate = () => {
       console.log('🔄 Violations updated, refreshing...');
       fetchDashboardData();
@@ -154,39 +172,54 @@ const Dashboard = () => {
     setRetryCount(prev => prev + 1);
   };
 
-  // Prepare chart data
+  // Action handlers for table
+  const handleViewViolation = (id) => {
+    navigate(`/violations/${id}`);
+  };
+
+  const handleEditViolation = (id) => {
+    navigate(`/violations/edit/${id}`);
+  };
+
+  const handleDeleteViolation = (id) => {
+    if (window.confirm('Are you sure you want to delete this violation?')) {
+      console.log('Delete violation:', id);
+      // Add delete API call here
+    }
+  };
+
+  // Prepare chart data - only for allowed types
   const violationTypeLabels = {
     no_helmet: 'No Helmet',
     triple_riding: 'Triple Riding',
     overloading: 'Overloading',
-    signal_violation: 'Signal Jump',
-    overspeeding: 'Overspeeding',
-    no_seatbelt: 'No Seatbelt',
     wrong_route: 'Wrong Route',
     wrong_parking: 'Wrong Parking'
   };
+
+  const chartColors = [
+    'rgba(231, 76, 60, 0.7)',
+    'rgba(52, 152, 219, 0.7)',
+    'rgba(241, 196, 15, 0.7)',
+    'rgba(46, 204, 113, 0.7)',
+    'rgba(155, 89, 182, 0.7)',
+  ];
+
+  const chartBorderColors = [
+    'rgba(231, 76, 60, 1)',
+    'rgba(52, 152, 219, 1)',
+    'rgba(241, 196, 15, 1)',
+    'rgba(46, 204, 113, 1)',
+    'rgba(155, 89, 182, 1)',
+  ];
 
   const violationsChartData = {
     labels: byType.map(item => violationTypeLabels[item._id] || item._id?.replace(/_/g, ' ') || 'Unknown'),
     datasets: [{
       label: 'Number of Violations',
       data: byType.map(item => item.count || 0),
-      backgroundColor: [
-        'rgba(231, 76, 60, 0.7)',
-        'rgba(52, 152, 219, 0.7)',
-        'rgba(241, 196, 15, 0.7)',
-        'rgba(46, 204, 113, 0.7)',
-        'rgba(155, 89, 182, 0.7)',
-        'rgba(230, 126, 34, 0.7)',
-      ],
-      borderColor: [
-        'rgba(231, 76, 60, 1)',
-        'rgba(52, 152, 219, 1)',
-        'rgba(241, 196, 15, 1)',
-        'rgba(46, 204, 113, 1)',
-        'rgba(155, 89, 182, 1)',
-        'rgba(230, 126, 34, 1)',
-      ],
+      backgroundColor: chartColors.slice(0, byType.length),
+      borderColor: chartBorderColors.slice(0, byType.length),
       borderWidth: 2,
       borderRadius: 8,
     }],
@@ -261,7 +294,8 @@ const Dashboard = () => {
       signal_violation: 'primary',
       overspeeding: 'secondary',
       no_seatbelt: 'dark',
-      wrong_route: 'success'
+      wrong_route: 'success',
+      wrong_parking: 'primary'
     };
     return colors[type] || 'secondary';
   };
@@ -372,7 +406,7 @@ const Dashboard = () => {
               </>
             ) : (
               <>
-                <i className="bi bi-arrow-clockwise me-2"></i>
+                <FaSync className="me-2" />
                 Refresh
               </>
             )}
@@ -383,7 +417,7 @@ const Dashboard = () => {
               onClick={() => navigate('/upload')}
               className="ms-2"
             >
-              <i className="bi bi-cloud-upload me-2"></i>
+              <FaCloudUploadAlt className="me-2" />
               New Upload
             </Button>
           )}
@@ -392,9 +426,9 @@ const Dashboard = () => {
 
       {/* Error Alert */}
       {error && (
-        <Alert variant="danger" className="dashboard-alert animate__animated animate__shakeX">
+        <Alert variant="danger" className="dashboard-alert">
           <div className="d-flex align-items-center">
-            <i className="bi bi-exclamation-triangle-fill me-3 fs-4"></i>
+            <FaExclamationTriangle className="me-3 fs-4" />
             <div className="flex-grow-1">
               <Alert.Heading className="mb-1">Connection Error</Alert.Heading>
               <p className="mb-2">{error}</p>
@@ -409,13 +443,13 @@ const Dashboard = () => {
         </Alert>
       )}
 
-      {/* Stats Cards */}
+      {/* Stats Cards with React Icons */}
       <Row className="stats-row">
         <Col xl={3} md={6} className="mb-4">
           <Card className="stat-card stat-card-total">
             <Card.Body>
               <div className="stat-icon">
-                <i className="bi bi-exclamation-triangle"></i>
+                <FaExclamationTriangle />
               </div>
               <div className="stat-info">
                 <Card.Title className="stat-label">Total Violations</Card.Title>
@@ -429,7 +463,7 @@ const Dashboard = () => {
           <Card className="stat-card stat-card-today">
             <Card.Body>
               <div className="stat-icon">
-                <i className="bi bi-calendar-check"></i>
+                <FaCalendarCheck />
               </div>
               <div className="stat-info">
                 <Card.Title className="stat-label">Today's Violations</Card.Title>
@@ -443,7 +477,7 @@ const Dashboard = () => {
           <Card className="stat-card stat-card-pending">
             <Card.Body>
               <div className="stat-icon">
-                <i className="bi bi-hourglass-split"></i>
+                <FaHourglassHalf />
               </div>
               <div className="stat-info">
                 <Card.Title className="stat-label">Pending Review</Card.Title>
@@ -457,7 +491,7 @@ const Dashboard = () => {
           <Card className="stat-card stat-card-fines">
             <Card.Body>
               <div className="stat-icon">
-                <i className="bi bi-cash-stack"></i>
+                <FaMoneyBillWave />
               </div>
               <div className="stat-info">
                 <Card.Title className="stat-label">Total Fines</Card.Title>
@@ -475,7 +509,7 @@ const Dashboard = () => {
           <Card className="chart-card">
             <Card.Header className="chart-header">
               <h5 className="mb-0">
-                <i className="bi bi-bar-chart-fill me-2"></i>
+                <FaChartBar className="me-2" />
                 Violations by Type
               </h5>
             </Card.Header>
@@ -485,7 +519,7 @@ const Dashboard = () => {
                   <Bar data={violationsChartData} options={chartOptions} />
                 ) : (
                   <div className="chart-empty">
-                    <i className="bi bi-bar-chart"></i>
+                    <FaChartBar size={40} />
                     <p>No violation data available</p>
                   </div>
                 )}
@@ -497,7 +531,7 @@ const Dashboard = () => {
           <Card className="chart-card">
             <Card.Header className="chart-header">
               <h5 className="mb-0">
-                <i className="bi bi-graph-up me-2"></i>
+                <FaChartLine className="me-2" />
                 Daily Trend (7 Days)
               </h5>
             </Card.Header>
@@ -507,7 +541,7 @@ const Dashboard = () => {
                   <Line data={dailyChartData} options={chartOptions} />
                 ) : (
                   <div className="chart-empty">
-                    <i className="bi bi-graph-up"></i>
+                    <FaChartLine size={40} />
                     <p>No data for last 7 days</p>
                   </div>
                 )}
@@ -517,12 +551,12 @@ const Dashboard = () => {
         </Col>
       </Row>
 
-      {/* Recent Violations Table */}
+      {/* Recent Violations Table with Action Buttons */}
       <Card className="table-card">
         <Card.Header className="table-header">
           <div className="d-flex justify-content-between align-items-center">
             <h5 className="mb-0">
-              <i className="bi bi-list-ul me-2"></i>
+              <FaListUl className="me-2" />
               Recent Violations
             </h5>
             <div>
@@ -539,7 +573,7 @@ const Dashboard = () => {
                 size="sm" 
                 onClick={handleRetry}
               >
-                <i className="bi bi-arrow-repeat"></i>
+                <FaSync />
               </Button>
             </div>
           </div>
@@ -610,14 +644,35 @@ const Dashboard = () => {
                         </span>
                       </td>
                       <td>
-                        <Button 
-                          variant="outline-primary" 
-                          size="sm"
-                          onClick={() => navigate(`/violations/${violation._id || violation.violationId}`)}
-                          className="action-btn"
-                        >
-                          <i className="bi bi-eye"></i>
-                        </Button>
+                        <div className="action-buttons">
+                          <Button 
+                            variant="outline-primary" 
+                            size="sm"
+                            onClick={() => handleViewViolation(violation._id || violation.violationId)}
+                            className="action-btn me-1"
+                            title="View Details"
+                          >
+                            <FaEye />
+                          </Button>
+                          <Button 
+                            variant="outline-warning" 
+                            size="sm"
+                            onClick={() => handleEditViolation(violation._id || violation.violationId)}
+                            className="action-btn me-1"
+                            title="Edit"
+                          >
+                            <FaEdit />
+                          </Button>
+                          <Button 
+                            variant="outline-danger" 
+                            size="sm"
+                            onClick={() => handleDeleteViolation(violation._id || violation.violationId)}
+                            className="action-btn"
+                            title="Delete"
+                          >
+                            <FaTrash />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -625,7 +680,7 @@ const Dashboard = () => {
                   <tr>
                     <td colSpan="9">
                       <div className="empty-state">
-                        <i className="bi bi-inbox"></i>
+                        <FaInbox size={50} />
                         <h5>No Violations Yet</h5>
                         <p className="text-muted">Traffic violations will appear here once detected</p>
                         {userRole === 'admin' && (
@@ -635,7 +690,7 @@ const Dashboard = () => {
                             onClick={() => navigate('/upload')}
                             className="mt-2"
                           >
-                            <i className="bi bi-cloud-upload me-2"></i>
+                            <FaCloudUploadAlt className="me-2" />
                             Upload Media for Detection
                           </Button>
                         )}

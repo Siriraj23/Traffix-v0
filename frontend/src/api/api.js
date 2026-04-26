@@ -41,12 +41,14 @@ api.interceptors.response.use(
 
 // ==================== AUTH API ====================
 export const authAPI = {
+  // Login (works for both regular and Google login)
   login: async (credentials) => {
     try {
       const response = await api.post('/api/auth/login', credentials);
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
+        localStorage.setItem('userRole', response.data.user.role);
       }
       return {
         success: true,
@@ -60,6 +62,7 @@ export const authAPI = {
     }
   },
 
+  // Register (works for both regular and Google registration)
   register: async (userData) => {
     try {
       const response = await api.post('/api/auth/register', userData);
@@ -78,6 +81,7 @@ export const authAPI = {
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('userRole');
   },
 
   getCurrentUser: () => {
