@@ -1,0 +1,616 @@
+/* ViolationList.css - Professional Table Styling */
+
+.violation-list-container {
+  padding: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+}
+
+/* Header Styling */
+.violation-header {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 20px;
+  padding: 25px 30px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+  margin-bottom: 30px;
+}
+
+.violation-header h2 {
+  color: #2d3748;
+  font-weight: 600;
+  margin: 0;
+}
+
+.violation-header small {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+/* Stats Cards */
+.stats-container {
+  margin-bottom: 25px;
+}
+
+.stat-card {
+  border: none;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  height: 100%;
+}
+
+.stat-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+.stat-card .card-body {
+  padding: 20px 25px;
+}
+
+.stat-card h5 {
+  color: #718096;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+.stat-card h3 {
+  color: #2d3748;
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0;
+}
+
+/* Filter Card */
+.filter-card {
+  border: none;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+  margin-bottom: 25px;
+}
+
+.filter-card .card-body {
+  padding: 25px;
+}
+
+.filter-card .card-title {
+  color: #2d3748;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.filter-card .form-label {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #718096;
+  margin-bottom: 8px;
+}
+
+.filter-card .form-select,
+.filter-card .form-control {
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 15px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.filter-card .form-select:focus,
+.filter-card .form-control:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.filter-card .input-group .btn {
+  border-radius: 12px;
+  padding: 10px 20px;
+  margin-left: 10px;
+}
+
+/* Table Card */
+.table-card {
+  border: none;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+}
+
+.table-card .card-body {
+  padding: 25px;
+}
+
+.table-card .card-title {
+  color: #2d3748;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+/* Table Styling */
+.table-responsive {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.table {
+  margin-bottom: 0;
+}
+
+.table thead th {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 15px;
+  border: none;
+  white-space: nowrap;
+}
+
+.table tbody td {
+  padding: 15px;
+  vertical-align: middle;
+  border-bottom: 1px solid #e2e8f0;
+  color: #4a5568;
+  font-size: 14px;
+}
+
+.table tbody tr {
+  transition: all 0.3s ease;
+}
+
+.table tbody tr:hover {
+  background: #f7fafc;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Badge Styling */
+.badge {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: 20px;
+}
+
+/* Progress Bar */
+.progress {
+  background-color: #e2e8f0;
+  border-radius: 10px;
+  height: 6px;
+}
+
+.progress-bar {
+  border-radius: 10px;
+  transition: width 0.3s ease;
+}
+
+.progress-bar.bg-success {
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important;
+}
+
+.progress-bar.bg-warning {
+  background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%) !important;
+}
+
+/* Fine Amount */
+.text-success {
+  color: #38a169 !important;
+  font-weight: 700;
+}
+
+/* Button Groups */
+.btn-group {
+  display: flex;
+  gap: 5px;
+}
+
+.btn-group .btn {
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.btn-group .btn-outline-primary {
+  color: #667eea;
+  border-color: #667eea;
+}
+
+.btn-group .btn-outline-primary:hover {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: transparent;
+  color: white;
+}
+
+.btn-group .btn-outline-success {
+  color: #48bb78;
+  border-color: #48bb78;
+}
+
+.btn-group .btn-outline-success:hover {
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  border-color: transparent;
+  color: white;
+}
+
+/* Pagination */
+.pagination-container {
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 2px solid #e2e8f0;
+}
+
+.pagination-container .btn {
+  border-radius: 12px;
+  padding: 10px 20px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.pagination-container .btn-outline-primary {
+  color: #667eea;
+  border-color: #667eea;
+}
+
+.pagination-container .btn-outline-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: transparent;
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+}
+
+.pagination-container .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-container span {
+  color: #4a5568;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+/* Loading State */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
+}
+
+.loading-container .spinner-border {
+  width: 3rem;
+  height: 3rem;
+  border-width: 0.25rem;
+}
+
+.loading-container p {
+  margin-top: 20px;
+  color: #718096;
+  font-size: 16px;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.empty-state p {
+  color: #718096;
+  margin-bottom: 15px;
+}
+
+.empty-state .btn {
+  border-radius: 12px;
+  padding: 10px 25px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+}
+
+.empty-state .btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* Alert Styling */
+.alert {
+  border-radius: 16px;
+  border: none;
+  padding: 15px 20px;
+  font-weight: 500;
+  backdrop-filter: blur(10px);
+}
+
+.alert-danger {
+  background: rgba(245, 101, 101, 0.95);
+  color: white;
+}
+
+/* Vehicle Number Display */
+.vehicle-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* Fine Description Tooltip */
+.fine-description {
+  cursor: help;
+  border-bottom: 1px dashed #cbd5e0;
+}
+
+/* Type Badge Colors */
+.badge.bg-danger {
+  background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%) !important;
+}
+
+.badge.bg-warning {
+  background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%) !important;
+  color: white !important;
+}
+
+.badge.bg-info {
+  background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%) !important;
+}
+
+.badge.bg-success {
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important;
+}
+
+.badge.bg-secondary {
+  background: linear-gradient(135deg, #a0aec0 0%, #718096 100%) !important;
+}
+
+.badge.bg-dark {
+  background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%) !important;
+}
+
+.badge.bg-primary {
+  background: linear-gradient(135deg, #667eea 0%, #5a67d8 100%) !important;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .violation-list-container {
+    padding: 10px;
+  }
+
+  .violation-header {
+    padding: 20px;
+  }
+
+  .violation-header h2 {
+    font-size: 20px;
+  }
+
+  .stat-card .card-body {
+    padding: 15px;
+  }
+
+  .stat-card h3 {
+    font-size: 24px;
+  }
+
+  .filter-card .card-body {
+    padding: 20px;
+  }
+
+  .table-card .card-body {
+    padding: 15px;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table tbody tr {
+    display: block;
+    margin-bottom: 15px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 15px;
+  }
+
+  .table tbody td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border: none;
+  }
+
+  .table tbody td:before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #4a5568;
+    margin-right: 15px;
+  }
+
+  .btn-group {
+    justify-content: flex-end;
+  }
+
+  .pagination-container {
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stat-card,
+.filter-card,
+.table-card {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.stat-card:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.stat-card:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.filter-card {
+  animation-delay: 0.3s;
+}
+
+.table-card {
+  animation-delay: 0.4s;
+}
+
+/* Scrollbar Styling */
+.table-responsive::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 10px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
+}
+
+/* Refresh Button Animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.refresh-btn .spinner-border {
+  animation: spin 1s linear infinite;
+}
+
+/* Status Badge Hover */
+.status-badge {
+  transition: all 0.3s ease;
+}
+
+.status-badge:hover {
+  transform: scale(1.05);
+}
+
+/* Fine Amount Hover */
+.text-success {
+  transition: all 0.3s ease;
+}
+
+.text-success:hover {
+  transform: scale(1.05);
+}
+
+/* Table Row Click Effect */
+.table tbody tr {
+  cursor: pointer;
+}
+
+.table tbody tr:active {
+  transform: scale(0.99);
+}
+
+/* Filter Clear Button */
+.btn-outline-secondary {
+  border-color: #cbd5e0;
+  color: #718096;
+}
+
+.btn-outline-secondary:hover {
+  background: #cbd5e0;
+  border-color: #cbd5e0;
+  color: #2d3748;
+}
+
+/* Search Input Focus */
+.input-group .form-control:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* Upload Button */
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 12px;
+  padding: 10px 20px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* Print Styles */
+@media print {
+  .filter-card,
+  .btn-group,
+  .pagination-container,
+  .btn-primary {
+    display: none !important;
+  }
+
+  .table-card {
+    box-shadow: none;
+    background: white;
+  }
+
+  .table thead th {
+    background: #f7fafc !important;
+    color: #2d3748 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

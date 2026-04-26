@@ -1,0 +1,625 @@
+/* AwarenessSection.css - Professional Traffic Safety Component */
+
+.awareness-section {
+  background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
+  min-height: 100vh;
+}
+
+/* Section Header */
+.section-header {
+  position: relative;
+  padding: 2rem 0;
+}
+
+.section-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #1a237e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.title-icon {
+  font-size: 2rem;
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.section-subtitle {
+  font-size: 1.1rem;
+  color: #5c6bc0;
+  font-weight: 500;
+}
+
+/* Stats Cards */
+.stat-card {
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  overflow: hidden;
+  position: relative;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #1a237e, #283593);
+}
+
+.stat-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+.stat-card.stat-danger::before { background: linear-gradient(90deg, #d32f2f, #f44336); }
+.stat-card.stat-warning::before { background: linear-gradient(90deg, #f57c00, #ff9800); }
+.stat-card.stat-info::before { background: linear-gradient(90deg, #0288d1, #03a9f4); }
+.stat-card.stat-success::before { background: linear-gradient(90deg, #388e3c, #4caf50); }
+
+.stat-icon {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.stat-number {
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+
+.stat-label {
+  color: #666;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Pledge Card */
+.pledge-card {
+  border: none;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+  box-shadow: 0 10px 40px rgba(26, 35, 126, 0.3);
+  overflow: hidden;
+  position: relative;
+}
+
+.pledge-card::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+  animation: shimmer 3s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.pledge-content {
+  color: white;
+  padding: 1rem;
+}
+
+.pledge-badge {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  padding: 0.5rem 1.5rem;
+  border-radius: 50px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.pledge-title {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+}
+
+.pledge-text {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  opacity: 0.95;
+  margin-bottom: 1.5rem;
+}
+
+.pledge-stats {
+  display: flex;
+  gap: 2rem;
+}
+
+.pledge-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.stat-icon-small {
+  font-size: 1.5rem;
+  opacity: 0.9;
+}
+
+.pledge-stat-item h4 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.pledge-stat-item small {
+  opacity: 0.8;
+  font-size: 0.85rem;
+}
+
+.pledge-btn {
+  background: white;
+  color: #1a237e;
+  border: none;
+  padding: 1rem 2rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  border-radius: 50px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+}
+
+.pledge-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.3);
+  background: #f5f5f5;
+}
+
+.pledge-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pledge-actions .btn {
+  border-radius: 50px;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+}
+
+/* Section Heading */
+.section-heading {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1a237e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.heading-line {
+  flex: 1;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #1a237e, transparent);
+  max-width: 100px;
+}
+
+/* Tip Cards */
+.tip-card {
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  height: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.tip-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  border-color: #1a237e;
+}
+
+.tip-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.tip-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.tip-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1a237e;
+  margin: 0;
+}
+
+.tip-content {
+  color: #666;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+.tip-points {
+  margin-bottom: 1.5rem;
+}
+
+.tip-point {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.point-icon {
+  color: #4caf50;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.tip-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+.fine-badge {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #d32f2f, #f44336);
+}
+
+.learn-more-btn {
+  border-radius: 20px;
+  padding: 0.4rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.learn-more-btn:hover {
+  transform: translateX(5px);
+}
+
+/* Emergency Card */
+.emergency-card {
+  border: none;
+  border-radius: 20px;
+  background: white;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.emergency-title {
+  text-align: center;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #d32f2f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.pulse-icon {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.emergency-item {
+  text-align: center;
+  padding: 1.5rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.emergency-item:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+.emergency-ambulance:hover { background: linear-gradient(135deg, #ffebee, #ffcdd2); }
+.emergency-police:hover { background: linear-gradient(135deg, #e3f2fd, #bbdefb); }
+.emergency-fire:hover { background: linear-gradient(135deg, #fff3e0, #ffe0b2); }
+.emergency-traffic:hover { background: linear-gradient(135deg, #e0f2f1, #b2dfdb); }
+
+.emergency-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.emergency-item h3 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin-bottom: 0.25rem;
+  color: #1a237e;
+}
+
+.emergency-item p {
+  margin: 0;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 0.85rem;
+}
+
+/* Modal Styles */
+.pledge-modal .modal-content,
+.certificate-modal .modal-content {
+  border: none;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.modal-header-custom {
+  background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+  color: white;
+  border: none;
+  padding: 1.5rem;
+}
+
+.modal-header-custom .btn-close {
+  filter: brightness(0) invert(1);
+}
+
+.modal-body-custom {
+  padding: 2rem;
+}
+
+.modal-footer-custom {
+  border-top: 1px solid #e0e0e0;
+  padding: 1.5rem;
+}
+
+.pledge-preview {
+  background: linear-gradient(135deg, #f5f7fa 0%, #e8eaf6 100%);
+  padding: 1.5rem;
+  border-radius: 12px;
+  border-left: 4px solid #1a237e;
+}
+
+.pledge-preview-text {
+  font-size: 1.1rem;
+  line-height: 1.8;
+  color: #333;
+  font-style: italic;
+  margin: 0;
+}
+
+/* Certificate Styles */
+.certificate-container {
+  padding: 2rem;
+  background: #f5f7fa;
+  border-radius: 12px;
+}
+
+.certificate-border {
+  background: white;
+  padding: 0.5rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.certificate-content {
+  border: 3px solid #1a237e;
+  border-radius: 8px;
+  padding: 2rem;
+  background: linear-gradient(135deg, #ffffff 0%, #f5f7fa 100%);
+}
+
+.certificate-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.certificate-header h2 {
+  color: #1a237e;
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.certificate-subtitle {
+  color: #5c6bc0;
+  font-size: 1.1rem;
+  font-weight: 500;
+  letter-spacing: 2px;
+}
+
+.certificate-body {
+  text-align: center;
+}
+
+.certificate-text {
+  font-size: 1.1rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.certificate-name {
+  font-size: 2.5rem;
+  color: #1a237e;
+  font-weight: 700;
+  margin: 1rem 0;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.certificate-details {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: #f5f7fa;
+  border-radius: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.detail-item label {
+  font-size: 0.85rem;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 0.25rem;
+}
+
+.detail-item span {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1a237e;
+}
+
+.certificate-footer {
+  text-align: center;
+  margin-top: 2rem;
+}
+
+.certificate-motto {
+  font-style: italic;
+  color: #5c6bc0;
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.certificate-seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.5rem;
+  background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+  color: white;
+  border-radius: 50px;
+  font-weight: 600;
+}
+
+.seal-icon {
+  font-size: 1.25rem;
+}
+
+/* Form Styles */
+.form-label {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 0.5rem;
+}
+
+.form-control {
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  transition: all 0.3s ease;
+}
+
+.form-control:focus {
+  border-color: #1a237e;
+  box-shadow: 0 0 0 3px rgba(26, 35, 126, 0.1);
+}
+
+.form-check-input:checked {
+  background-color: #1a237e;
+  border-color: #1a237e;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .section-title {
+    font-size: 1.75rem;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .pledge-title {
+    font-size: 1.5rem;
+  }
+  
+  .pledge-text {
+    font-size: 1rem;
+  }
+  
+  .pledge-stats {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .certificate-name {
+    font-size: 1.75rem;
+  }
+  
+  .certificate-details {
+    grid-template-columns: 1fr;
+  }
+  
+  .emergency-item {
+    padding: 1rem;
+  }
+  
+  .emergency-item h3 {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .stat-number {
+    font-size: 2rem;
+  }
+  
+  .tip-footer {
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: stretch;
+  }
+  
+  .learn-more-btn {
+    width: 100%;
+  }
+  
+  .certificate-content {
+    padding: 1rem;
+  }
+  
+  .certificate-header h2 {
+    font-size: 1.5rem;
+  }
+}

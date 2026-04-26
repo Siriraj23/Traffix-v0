@@ -1,189 +1,389 @@
 import axios from 'axios';
 
-// ================= BASE API =================
-const API = axios.create({
-  baseURL: 'http://localhost:5001/api'
+// IMPORTANT: Backend runs on port 5001
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001';
+
+// Create axios instance
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 600000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
 });
 
-// ================= INTERCEPTOR =================
-// Attach token to every request
-API.interceptors.request.use(
+// Add request interceptor
+api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
-
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    return Promise.reject(error);
+  }
 );
 
-const getErrorMessage = (error) => {
-  if (!error) return 'Unknown error';
-  const responseData = error.response?.data;
-  if (responseData) {
-    if (typeof responseData === 'string') return responseData;
-    if (responseData.error) return responseData.error;
-    if (responseData.detail) {
-      return typeof responseData.detail === 'string'
-        ? responseData.detail
-        : JSON.stringify(responseData.detail);
+// Add response interceptor
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
     }
-    return JSON.stringify(responseData);
+    return Promise.reject(error);
   }
-  return error.message || 'Unknown error';
-};
+);
 
-// ================= AUTH =================
+// ==================== AUTH API ====================
 export const authAPI = {
-  login: async (email, password) => {
+  login: async (credentials) => {
     try {
-      const res = await API.post('/auth/login', { email, password });
-
-      if (res.data.success) {
-        // ✅ STORE DATA CORRECTLY
-        localStorage.setItem('token', res.data.token);
-        localStorage.setItem('user', JSON.stringify(res.data.user));
-        localStorage.setItem('userRole', res.data.user.role);
-
-        console.log("✅ Logged in as:", res.data.user.role);
+      const response = await api.post('/api/auth/login', credentials);
+      if (response.data.token) {
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
       }
-
-      return res.data;
-
+      return {
+        success: true,
+        data: response.data
+      };
     } catch (error) {
       return {
         success: false,
-        error: getErrorMessage(error)
+        error: error.response?.data?.detail || error.response?.data?.message || 'Login failed'
       };
     }
   },
 
-  register: async (data) => {
+  register: async (userData) => {
     try {
-      const res = await API.post('/auth/register', data);
-
-      if (res.data.success) {
-        // ✅ Auto-login after register (optional but useful)
-        localStorage.setItem('token', res.data.token);
-        localStorage.setItem('user', JSON.stringify(res.data.user));
-        localStorage.setItem('userRole', res.data.user.role);
-      }
-
-      return res.data;
-
+      const response = await api.post('/api/auth/register', userData);
+      return {
+        success: true,
+        data: response.data
+      };
     } catch (error) {
       return {
         success: false,
-        error: getErrorMessage(error)
+        error: error.response?.data?.detail || error.response?.data?.message || 'Registration failed'
       };
     }
   },
 
   logout: () => {
-    localStorage.clear();
-  }
-};
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+  },
 
-// ================= VIOLATIONS =================
-export const violationsAPI = {
-  getAll: async () => {
+  getCurrentUser: () => {
+    const user = localStorage.getItem('user');
+    return user ? JSON.parse(user) : null;
+  },
+
+  isAuthenticated: () => {
+    return !!localStorage.getItem('token');
+  },
+
+  updateProfile: async (userData) => {
     try {
-      const res = await API.get('/violations');
-
+      const response = await api.put('/api/auth/profile', userData);
+      if (response.data.user) {
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+      }
       return {
         success: true,
-        violations: res.data.violations || [],
-        pagination: res.data.pagination || {}
+        data: response.data
       };
-
     } catch (error) {
       return {
         success: false,
-        violations: [],
-        error: getErrorMessage(error)
-      };
-    }
-  },
-
-  create: async (data) => {
-    try {
-      const res = await API.post('/violations', data);
-      return res.data;
-    } catch (error) {
-      return {
-        success: false,
-        error: getErrorMessage(error)
-      };
-    }
-  },
-
-  update: async (id, data) => {
-    try {
-      const res = await API.put(`/violations/${id}`, data);
-      return res.data;
-    } catch (error) {
-      return {
-        success: false,
-        error: getErrorMessage(error)
+        error: error.response?.data?.detail || error.message
       };
     }
   }
 };
 
-// ================= DASHBOARD =================
+// ==================== UPLOAD API ====================
+export const uploadAPI = {
+  uploadMedia: async (formData) => {
+    const file = formData.get('file');
+    const isVideo = file && file.type.startsWith('video/');
+    
+    try {
+      const response = await api.post('/api/detect', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: isVideo ? 600000 : 120000,
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total
+            );
+            console.log(`Upload Progress: ${percentCompleted}%`);
+          }
+        },
+      });
+      
+      return {
+        success: true,
+        ...response.data
+      };
+    } catch (error) {
+      console.error('Upload API Error:', error);
+      
+      if (error.code === 'ECONNABORTED') {
+        return {
+          success: false,
+          error: 'Request timed out. Video processing is taking longer than expected.',
+          timeout: true
+        };
+      } else if (error.response) {
+        return {
+          success: false,
+          error: error.response.data?.detail || error.response.data?.message || 'Server error occurred',
+          status: error.response.status
+        };
+      } else if (error.request) {
+        return {
+          success: false,
+          error: 'Network error. Please check if backend is running on port 5001.',
+          networkError: true
+        };
+      } else {
+        return {
+          success: false,
+          error: error.message || 'Failed to process request'
+        };
+      }
+    }
+  },
+
+  getResults: async () => {
+    try {
+      const response = await api.get('/api/results');
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.detail || error.message
+      };
+    }
+  },
+
+  clearResults: async () => {
+    try {
+      const response = await api.get('/api/clear');
+      return {
+        success: true,
+        message: response.data.message
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.detail || error.message
+      };
+    }
+  },
+
+  checkHealth: async () => {
+    try {
+      const response = await api.get('/api/health');
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: 'Server is not reachable on port 5001'
+      };
+    }
+  }
+};
+
+// ==================== VIOLATIONS API ====================
+export const violationsAPI = {
+  create: async (violationData) => {
+    try {
+      const response = await api.post('/api/violations', violationData);
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.detail || error.message
+      };
+    }
+  },
+
+  getAll: async (params = {}) => {
+    try {
+      const response = await api.get('/api/violations', { params });
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.detail || error.message
+      };
+    }
+  },
+
+  getById: async (id) => {
+    try {
+      const response = await api.get(`/api/violations/${id}`);
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.detail || error.message
+      };
+    }
+  },
+
+  update: async (id, updateData) => {
+    try {
+      const response = await api.put(`/api/violations/${id}`, updateData);
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.detail || error.message
+      };
+    }
+  },
+
+  delete: async (id) => {
+    try {
+      const response = await api.delete(`/api/violations/${id}`);
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.detail || error.message
+      };
+    }
+  },
+
+  getStats: async () => {
+    try {
+      const response = await api.get('/api/violations/stats');
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.detail || error.message
+      };
+    }
+  }
+};
+
+// ==================== DASHBOARD API ====================
 export const dashboardAPI = {
   getStats: async () => {
     try {
-      const res = await API.get('/dashboard/stats');
-
+      const response = await api.get('/api/dashboard/stats');
       return {
         success: true,
-        stats: res.data.stats || {},
-        byType: res.data.byType || []
+        data: response.data
       };
-
     } catch (error) {
+      console.error('Dashboard stats error:', error);
       return {
         success: false,
-        stats: {},
-        byType: []
-      };
-    }
-  }
-};
-
-// ================= UPLOAD =================
-export const uploadAPI = {
-  uploadImage: async (formData) => {
-    try {
-      const res = await API.post('/upload', formData);
-
-      return res.data;
-
-    } catch (error) {
-      return {
-        success: false,
-        error: getErrorMessage(error)
+        error: error.response?.data?.error || 'Failed to load dashboard data'
       };
     }
   },
-  uploadMedia: async (formData) => {
+
+  getRecentViolations: async (limit = 10) => {
     try {
-      const res = await API.post('/upload', formData);
-
-      return res.data;
-
+      const response = await api.get('/api/dashboard/recent-violations', { 
+        params: { limit } 
+      });
+      return {
+        success: true,
+        data: response.data
+      };
     } catch (error) {
       return {
         success: false,
-        error: getErrorMessage(error)
+        error: error.response?.data?.detail || error.message
+      };
+    }
+  },
+
+  getViolationTrends: async (period = 'weekly') => {
+    try {
+      const response = await api.get('/api/dashboard/violation-trends', { 
+        params: { period } 
+      });
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.detail || error.message
+      };
+    }
+  },
+
+  getVehicleStats: async () => {
+    try {
+      const response = await api.get('/api/dashboard/vehicle-stats');
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.detail || error.message
+      };
+    }
+  },
+
+  getAuthorityStats: async () => {
+    try {
+      const response = await api.get('/api/dashboard/authority-stats');
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.detail || error.message
       };
     }
   }
 };
 
-// ================= EXPORT =================
-export default API;
+export default api;

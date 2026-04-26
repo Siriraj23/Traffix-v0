@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Row, Col, Card, Button, Spinner, Alert } from 'react-bootstrap';
+import { Row, Col, Card, Button, Spinner, Alert, Badge, Table } from 'react-bootstrap';
 import { Bar, Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -15,6 +15,7 @@ import {
 } from 'chart.js';
 import { dashboardAPI } from '../api/api';
 import { useNavigate } from 'react-router-dom';
+import './Dashboard.css';
 
 ChartJS.register(
   CategoryScale,
@@ -44,48 +45,69 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [dailyData, setDailyData] = useState([]);
+  const [retryCount, setRetryCount] = useState(0);
 
-  // Fetch real data from backend
+  // Fetch dashboard data from backend
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
       
-      console.log('Fetching dashboard data from API...');
+      console.log(`📊 Fetching dashboard data... (Attempt ${retryCount + 1})`);
+      
       const response = await dashboardAPI.getStats();
-      console.log('API Response:', response);
+      console.log('✅ API Response:', response);
       
       if (response && response.success) {
-        setStats(response.stats || {
-          totalViolations: 0,
-          todayViolations: 0,
-          pendingReview: 0,
-          totalFines: 0
-        });
-        setByType(response.byType || []);
+        // Handle both response formats
+        const responseData = response.data || response;
         
-        if (response.recent && response.recent.length > 0) {
-          setRecentViolations(response.recent);
-          generateDailyData(response.recent);
+        setStats({
+          totalViolations: responseData.stats?.totalViolations || 0,
+          todayViolations: responseData.stats?.todayViolations || 0,
+          pendingReview: responseData.stats?.pendingReview || 0,
+          totalFines: responseData.stats?.totalFines || 0
+        });
+        
+        setByType(responseData.byType || []);
+        
+        // Fetch recent violations separately
+        const recentResponse = await dashboardAPI.getRecentViolations(10);
+        if (recentResponse.success) {
+          const recentData = recentResponse.data?.data || recentResponse.data || [];
+          setRecentViolations(Array.isArray(recentData) ? recentData : []);
+          generateDailyData(Array.isArray(recentData) ? recentData : []);
         }
+        
+        // Dispatch event for other components
+        window.dispatchEvent(new CustomEvent('dashboardDataLoaded', { 
+          detail: responseData 
+        }));
+        
       } else {
-        setError('Failed to load dashboard data');
+        throw new Error(response?.error || 'Failed to load dashboard data');
       }
     } catch (err) {
-      console.error('Dashboard error details:', err);
-      setError('Error connecting to server');
+      console.error('❌ Dashboard Error:', err);
+      
+      if (err.code === 'ERR_NETWORK' || err.message.includes('Network Error')) {
+        setError('Cannot connect to server. Please ensure backend is running on port 5001.');
+      } else if (err.response?.status === 500) {
+        setError('Server error occurred. Please check server logs.');
+      } else {
+        setError(err.message || 'Failed to load dashboard data');
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [retryCount]);
 
-  // Generate daily trend data from actual violations
+  // Generate daily trend data
   const generateDailyData = (violations) => {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const today = new Date();
     const last7Days = [];
     
-    // Create array of last 7 days
     for (let i = 6; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
@@ -96,15 +118,11 @@ const Dashboard = () => {
       });
     }
     
-    // Count violations per day
     violations.forEach(v => {
       const vDate = new Date(v.timestamp || v.createdAt);
       const vDateStr = vDate.toDateString();
-      
       const dayData = last7Days.find(d => d.date === vDateStr);
-      if (dayData) {
-        dayData.count++;
-      }
+      if (dayData) dayData.count++;
     });
     
     setDailyData(last7Days);
@@ -114,12 +132,12 @@ const Dashboard = () => {
   useEffect(() => {
     fetchDashboardData();
     
-    // Refresh every 30 seconds
+    // Auto-refresh every 30 seconds
     const interval = setInterval(fetchDashboardData, 30000);
     
     // Listen for violation updates
     const handleViolationsUpdate = () => {
-      console.log('🔄 Violations updated, refreshing dashboard...');
+      console.log('🔄 Violations updated, refreshing...');
       fetchDashboardData();
     };
     
@@ -131,64 +149,97 @@ const Dashboard = () => {
     };
   }, [fetchDashboardData]);
 
-  // Prepare chart data from real statistics
-  const violationLabels = {
-    signal_violation: 'Signal',
-    overspeeding: 'Overspeed',
-    no_seatbelt: 'No Seatbelt',
+  // Retry handler
+  const handleRetry = () => {
+    setRetryCount(prev => prev + 1);
+  };
+
+  // Prepare chart data
+  const violationTypeLabels = {
+    no_helmet: 'No Helmet',
     triple_riding: 'Triple Riding',
+    overloading: 'Overloading',
+    signal_violation: 'Signal Jump',
+    overspeeding: 'Overspeeding',
+    no_seatbelt: 'No Seatbelt',
     wrong_route: 'Wrong Route',
-    no_helmet: 'No Helmet'
+    wrong_parking: 'Wrong Parking'
   };
 
-  // Create data for violations by type chart
   const violationsChartData = {
-    labels: byType.map(item => violationLabels[item._id] || item._id),
-    datasets: [
-      {
-        label: 'Number of Violations',
-        data: byType.map(item => item.count || 0),
-        backgroundColor: [
-          'rgba(255, 99, 132, 0.7)',
-          'rgba(54, 162, 235, 0.7)',
-          'rgba(255, 206, 86, 0.7)',
-          'rgba(75, 192, 192, 0.7)',
-          'rgba(153, 102, 255, 0.7)',
-          'rgba(255, 159, 64, 0.7)',
-        ],
-        borderColor: [
-          'rgba(255, 99, 132, 1)',
-          'rgba(54, 162, 235, 1)',
-          'rgba(255, 206, 86, 1)',
-          'rgba(75, 192, 192, 1)',
-          'rgba(153, 102, 255, 1)',
-          'rgba(255, 159, 64, 1)',
-        ],
-        borderWidth: 1,
-      },
-    ],
+    labels: byType.map(item => violationTypeLabels[item._id] || item._id?.replace(/_/g, ' ') || 'Unknown'),
+    datasets: [{
+      label: 'Number of Violations',
+      data: byType.map(item => item.count || 0),
+      backgroundColor: [
+        'rgba(231, 76, 60, 0.7)',
+        'rgba(52, 152, 219, 0.7)',
+        'rgba(241, 196, 15, 0.7)',
+        'rgba(46, 204, 113, 0.7)',
+        'rgba(155, 89, 182, 0.7)',
+        'rgba(230, 126, 34, 0.7)',
+      ],
+      borderColor: [
+        'rgba(231, 76, 60, 1)',
+        'rgba(52, 152, 219, 1)',
+        'rgba(241, 196, 15, 1)',
+        'rgba(46, 204, 113, 1)',
+        'rgba(155, 89, 182, 1)',
+        'rgba(230, 126, 34, 1)',
+      ],
+      borderWidth: 2,
+      borderRadius: 8,
+    }],
   };
 
-  // Create data for daily trend chart
   const dailyChartData = {
     labels: dailyData.map(d => d.day),
-    datasets: [
-      {
-        label: 'Violations',
-        data: dailyData.map(d => d.count),
-        borderColor: 'rgb(75, 192, 192)',
-        backgroundColor: 'rgba(75, 192, 192, 0.2)',
-        tension: 0.4,
-        fill: true,
-        pointBackgroundColor: 'rgb(75, 192, 192)',
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2,
-        pointRadius: 4,
-      },
-    ],
+    datasets: [{
+      label: 'Violations',
+      data: dailyData.map(d => d.count),
+      borderColor: 'rgb(59, 130, 246)',
+      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+      tension: 0.4,
+      fill: true,
+      pointBackgroundColor: 'rgb(59, 130, 246)',
+      pointBorderColor: '#fff',
+      pointBorderWidth: 2,
+      pointRadius: 6,
+      pointHoverRadius: 8,
+    }],
   };
 
-  // Format currency
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'bottom',
+        labels: {
+          usePointStyle: true,
+          padding: 20,
+        }
+      },
+      tooltip: {
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        padding: 12,
+        cornerRadius: 8,
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: { stepSize: 1 },
+        grid: { color: 'rgba(0, 0, 0, 0.05)' }
+      },
+      x: {
+        grid: { display: false }
+      }
+    }
+  };
+
+  // Formatters
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -198,25 +249,23 @@ const Dashboard = () => {
     }).format(amount || 0);
   };
 
-  // Format number with commas
   const formatNumber = (num) => {
     return new Intl.NumberFormat('en-IN').format(num || 0);
   };
 
-  // Get badge color for violation type
   const getTypeBadge = (type) => {
     const colors = {
-      signal_violation: 'danger',
-      overspeeding: 'warning',
-      no_seatbelt: 'info',
-      triple_riding: 'secondary',
-      wrong_route: 'primary',
-      no_helmet: 'dark'
+      no_helmet: 'danger',
+      triple_riding: 'warning',
+      overloading: 'info',
+      signal_violation: 'primary',
+      overspeeding: 'secondary',
+      no_seatbelt: 'dark',
+      wrong_route: 'success'
     };
     return colors[type] || 'secondary';
   };
 
-  // Format violation type for display
   const formatViolationType = (type) => {
     if (!type) return 'Unknown';
     return type.split('_').map(word => 
@@ -224,7 +273,6 @@ const Dashboard = () => {
     ).join(' ');
   };
 
-  // Get status badge color
   const getStatusColor = (status) => {
     switch(status?.toLowerCase()) {
       case 'detected': return 'warning';
@@ -232,183 +280,251 @@ const Dashboard = () => {
       case 'reviewed': return 'info';
       case 'appealed': return 'danger';
       case 'dismissed': return 'secondary';
-      default: return 'secondary';
+      case 'pending': return 'primary';
+      default: return 'light';
     }
   };
 
-  // Format date
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     try {
       const date = new Date(dateString);
       const now = new Date();
       const diffTime = Math.abs(now - date);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
       
       if (diffDays === 0) {
-        return 'Today ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const diffHours = Math.floor(diffTime / (1000 * 60 * 60));
+        if (diffHours === 0) {
+          const diffMins = Math.floor(diffTime / (1000 * 60));
+          return diffMins <= 1 ? 'Just now' : `${diffMins} mins ago`;
+        }
+        return `${diffHours} hours ago`;
       } else if (diffDays === 1) {
-        return 'Yesterday ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      } else {
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return 'Yesterday';
+      } else if (diffDays < 7) {
+        return `${diffDays} days ago`;
       }
+      return date.toLocaleDateString('en-IN', { 
+        day: 'numeric', 
+        month: 'short', 
+        year: 'numeric' 
+      });
     } catch (e) {
       return dateString;
     }
   };
 
+  const formatTime = (dateString) => {
+    if (!dateString) return '';
+    try {
+      return new Date(dateString).toLocaleTimeString('en-IN', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+    } catch {
+      return '';
+    }
+  };
+
+  // Loading State
   if (loading && stats.totalViolations === 0) {
     return (
-      <div className="text-center mt-5">
-        <Spinner animation="border" variant="primary" />
-        <p className="mt-3">Loading dashboard data...</p>
-        <p className="text-muted small">Make sure backend server is running on port 5001</p>
+      <div className="dashboard-loading">
+        <div className="loading-container">
+          <Spinner animation="border" variant="primary" className="loading-spinner" />
+          <h4 className="mt-4">Loading Dashboard</h4>
+          <p className="text-muted">Fetching latest traffic violation data...</p>
+          <div className="loading-dots">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <div>
-          <h2 className="mb-0">
-            {userRole === 'admin' ? '👮 Traffic Authority Dashboard' : '👤 Public Dashboard'}
+    <div className="dashboard-container">
+      {/* Header */}
+      <div className="dashboard-header">
+        <div className="header-left">
+          <h2 className="dashboard-title">
+            {userRole === 'admin' ? '🚔 Traffic Control Dashboard' : '📊 Violation Dashboard'}
           </h2>
-          <p className="text-muted">
-            Welcome back, {user.fullName || user.username}
+          <p className="dashboard-subtitle">
+            Welcome back, <strong>{user.fullName || user.username || 'User'}</strong>
+            {userRole === 'admin' && (
+              <Badge bg="danger" className="ms-2 admin-badge">ADMIN</Badge>
+            )}
           </p>
         </div>
-        <Button 
-          variant="outline-primary" 
-          onClick={fetchDashboardData}
-          disabled={loading}
-        >
-          {loading ? 'Refreshing...' : '↻ Refresh'}
-        </Button>
+        <div className="header-actions">
+          <Button 
+            variant="outline-primary" 
+            onClick={handleRetry}
+            disabled={loading}
+            className="refresh-btn"
+          >
+            {loading ? (
+              <>
+                <Spinner animation="border" size="sm" className="me-2" />
+                Refreshing...
+              </>
+            ) : (
+              <>
+                <i className="bi bi-arrow-clockwise me-2"></i>
+                Refresh
+              </>
+            )}
+          </Button>
+          {userRole === 'admin' && (
+            <Button 
+              variant="primary" 
+              onClick={() => navigate('/upload')}
+              className="ms-2"
+            >
+              <i className="bi bi-cloud-upload me-2"></i>
+              New Upload
+            </Button>
+          )}
+        </div>
       </div>
-      
+
+      {/* Error Alert */}
       {error && (
-        <Alert variant="danger">
-          <Alert.Heading>Connection Error</Alert.Heading>
-          <p>{error}</p>
-          <hr />
-          <div className="d-flex justify-content-between">
-            <p className="mb-0">Make sure backend server is running on http://localhost:5001</p>
-            <Button variant="outline-danger" size="sm" onClick={fetchDashboardData}>
-              Retry Connection
+        <Alert variant="danger" className="dashboard-alert animate__animated animate__shakeX">
+          <div className="d-flex align-items-center">
+            <i className="bi bi-exclamation-triangle-fill me-3 fs-4"></i>
+            <div className="flex-grow-1">
+              <Alert.Heading className="mb-1">Connection Error</Alert.Heading>
+              <p className="mb-2">{error}</p>
+              <small className="text-muted">
+                Make sure backend server is running on <code>http://localhost:5001</code>
+              </small>
+            </div>
+            <Button variant="outline-danger" size="sm" onClick={handleRetry}>
+              Retry
             </Button>
           </div>
         </Alert>
       )}
 
       {/* Stats Cards */}
-      <Row className="mb-4">
-        <Col md={3}>
-          <Card className="border-primary border-top border-top-4 h-100">
+      <Row className="stats-row">
+        <Col xl={3} md={6} className="mb-4">
+          <Card className="stat-card stat-card-total">
             <Card.Body>
-              <Card.Title className="text-muted small text-uppercase">Total Violations</Card.Title>
-              <h2 className="text-primary display-6">{formatNumber(stats.totalViolations)}</h2>
-              <small className="text-muted">All time</small>
+              <div className="stat-icon">
+                <i className="bi bi-exclamation-triangle"></i>
+              </div>
+              <div className="stat-info">
+                <Card.Title className="stat-label">Total Violations</Card.Title>
+                <h2 className="stat-value">{formatNumber(stats.totalViolations)}</h2>
+                <small className="stat-footer">All time records</small>
+              </div>
             </Card.Body>
           </Card>
         </Col>
-        <Col md={3}>
-          <Card className="border-success border-top border-top-4 h-100">
+        <Col xl={3} md={6} className="mb-4">
+          <Card className="stat-card stat-card-today">
             <Card.Body>
-              <Card.Title className="text-muted small text-uppercase">Today's Violations</Card.Title>
-              <h2 className="text-success display-6">{formatNumber(stats.todayViolations)}</h2>
-              <small className="text-muted">Last 24 hours</small>
+              <div className="stat-icon">
+                <i className="bi bi-calendar-check"></i>
+              </div>
+              <div className="stat-info">
+                <Card.Title className="stat-label">Today's Violations</Card.Title>
+                <h2 className="stat-value">{formatNumber(stats.todayViolations)}</h2>
+                <small className="stat-footer">Last 24 hours</small>
+              </div>
             </Card.Body>
           </Card>
         </Col>
-        <Col md={3}>
-          <Card className="border-warning border-top border-top-4 h-100">
+        <Col xl={3} md={6} className="mb-4">
+          <Card className="stat-card stat-card-pending">
             <Card.Body>
-              <Card.Title className="text-muted small text-uppercase">Pending Review</Card.Title>
-              <h2 className="text-warning display-6">{formatNumber(stats.pendingReview)}</h2>
-              <small className="text-muted">Need verification</small>
+              <div className="stat-icon">
+                <i className="bi bi-hourglass-split"></i>
+              </div>
+              <div className="stat-info">
+                <Card.Title className="stat-label">Pending Review</Card.Title>
+                <h2 className="stat-value">{formatNumber(stats.pendingReview)}</h2>
+                <small className="stat-footer">Awaiting action</small>
+              </div>
             </Card.Body>
           </Card>
         </Col>
-        <Col md={3}>
-          <Card className="border-info border-top border-top-4 h-100">
+        <Col xl={3} md={6} className="mb-4">
+          <Card className="stat-card stat-card-fines">
             <Card.Body>
-              <Card.Title className="text-muted small text-uppercase">Total Fines</Card.Title>
-              <h2 className="text-info display-6">{formatCurrency(stats.totalFines)}</h2>
-              <small className="text-muted">Collected amount</small>
+              <div className="stat-icon">
+                <i className="bi bi-cash-stack"></i>
+              </div>
+              <div className="stat-info">
+                <Card.Title className="stat-label">Total Fines</Card.Title>
+                <h2 className="stat-value">{formatCurrency(stats.totalFines)}</h2>
+                <small className="stat-footer">Amount collected</small>
+              </div>
             </Card.Body>
           </Card>
         </Col>
       </Row>
 
       {/* Charts */}
-      <Row className="mb-4">
-        <Col md={6}>
-          <Card className="h-100">
+      <Row className="charts-row">
+        <Col lg={6} className="mb-4">
+          <Card className="chart-card">
+            <Card.Header className="chart-header">
+              <h5 className="mb-0">
+                <i className="bi bi-bar-chart-fill me-2"></i>
+                Violations by Type
+              </h5>
+            </Card.Header>
             <Card.Body>
-              <Card.Title>Violations by Type</Card.Title>
-              {byType.length > 0 ? (
-                <Bar 
-                  data={violationsChartData} 
-                  options={{
-                    responsive: true,
-                    plugins: {
-                      legend: { display: false },
-                      tooltip: { 
-                        callbacks: {
-                          label: (context) => `Count: ${context.raw}`
-                        }
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <div className="text-center py-5">
-                  <p className="text-muted">No violation data available</p>
-                </div>
-              )}
+              <div className="chart-container">
+                {byType.length > 0 ? (
+                  <Bar data={violationsChartData} options={chartOptions} />
+                ) : (
+                  <div className="chart-empty">
+                    <i className="bi bi-bar-chart"></i>
+                    <p>No violation data available</p>
+                  </div>
+                )}
+              </div>
             </Card.Body>
           </Card>
         </Col>
-        <Col md={6}>
-          <Card className="h-100">
+        <Col lg={6} className="mb-4">
+          <Card className="chart-card">
+            <Card.Header className="chart-header">
+              <h5 className="mb-0">
+                <i className="bi bi-graph-up me-2"></i>
+                Daily Trend (7 Days)
+              </h5>
+            </Card.Header>
             <Card.Body>
-              <Card.Title>Daily Trend (Last 7 Days)</Card.Title>
-              {dailyData.some(d => d.count > 0) ? (
-                <Line 
-                  data={dailyChartData}
-                  options={{
-                    responsive: true,
-                    plugins: {
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => `Violations: ${context.raw}`
-                        }
-                      }
-                    },
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        ticks: { stepSize: 1 }
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <div className="text-center py-5">
-                  <p className="text-muted">No data for last 7 days</p>
-                </div>
-              )}
+              <div className="chart-container">
+                {dailyData.some(d => d.count > 0) ? (
+                  <Line data={dailyChartData} options={chartOptions} />
+                ) : (
+                  <div className="chart-empty">
+                    <i className="bi bi-graph-up"></i>
+                    <p>No data for last 7 days</p>
+                  </div>
+                )}
+              </div>
             </Card.Body>
           </Card>
         </Col>
       </Row>
 
-      {/* Recent Violations */}
-      <Card>
-        <Card.Body>
-          <Card.Title className="d-flex justify-content-between align-items-center">
-            <span>Recent Violations</span>
+      {/* Recent Violations Table */}
+      <Card className="table-card">
+        <Card.Header className="table-header">
+          <div className="d-flex justify-content-between align-items-center">
+            <h5 className="mb-0">
+              <i className="bi bi-list-ul me-2"></i>
+              Recent Violations
+            </h5>
             <div>
               <Button 
                 variant="outline-primary" 
@@ -418,89 +534,117 @@ const Dashboard = () => {
               >
                 View All
               </Button>
-              {userRole === 'admin' && (
-                <Button 
-                  variant="primary" 
-                  size="sm" 
-                  onClick={() => navigate('/upload')}
-                >
-                  Upload New
-                </Button>
-              )}
+              <Button 
+                variant="outline-secondary" 
+                size="sm" 
+                onClick={handleRetry}
+              >
+                <i className="bi bi-arrow-repeat"></i>
+              </Button>
             </div>
-          </Card.Title>
-          
+          </div>
+        </Card.Header>
+        <Card.Body className="p-0">
           <div className="table-responsive">
-            <table className="table table-hover">
+            <Table hover className="violations-table mb-0">
               <thead>
                 <tr>
                   <th>ID</th>
                   <th>Type</th>
                   <th>Vehicle</th>
-                  <th>Location</th>
+                  <th>Confidence</th>
                   <th>Status</th>
+                  <th>Date</th>
                   <th>Time</th>
                   <th>Fine</th>
-                  <th>Action</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {recentViolations.length > 0 ? (
-                  recentViolations.slice(0, 5).map((violation) => (
-                    <tr key={violation._id || violation.violationId || Math.random()}>
+                  recentViolations.slice(0, 8).map((violation, index) => (
+                    <tr key={violation._id || violation.violationId || index}>
                       <td>
-                        <small className="text-muted">
-                          {(violation.violationId || violation._id || '').slice(0, 8)}...
+                        <small className="text-muted font-monospace">
+                          #{(violation._id || violation.violationId || '').slice(-6)}
                         </small>
                       </td>
                       <td>
-                        <span className={`badge bg-${getTypeBadge(violation.type)}`}>
+                        <Badge bg={getTypeBadge(violation.type)} className="violation-badge">
                           {formatViolationType(violation.type)}
-                        </span>
+                        </Badge>
                       </td>
                       <td>
-                        <div>{violation.vehicleNumber || 'N/A'}</div>
-                        <small className="text-muted">{violation.vehicleType || ''}</small>
+                        <div className="fw-semibold">
+                          {violation.vehicleNumber || violation.vehicleId || 'N/A'}
+                        </div>
+                        <small className="text-muted">
+                          {violation.vehicleType || violation.details?.vehicleType || ''}
+                        </small>
                       </td>
                       <td>
-                        <small>{violation.location?.address || violation.location || 'N/A'}</small>
+                        <div className="confidence-bar">
+                          <div 
+                            className="confidence-fill"
+                            style={{ width: `${(violation.confidence || 0) * 100}%` }}
+                          ></div>
+                        </div>
+                        <small className="text-muted">
+                          {((violation.confidence || 0) * 100).toFixed(0)}%
+                        </small>
                       </td>
                       <td>
-                        <span className={`badge bg-${getStatusColor(violation.status)}`}>
+                        <Badge bg={getStatusColor(violation.status)} className="status-badge">
                           {violation.status || 'Detected'}
-                        </span>
+                        </Badge>
                       </td>
                       <td>
                         <small>{formatDate(violation.timestamp || violation.createdAt)}</small>
                       </td>
                       <td>
-                        <strong className="text-success">₹{violation.fineAmount?.toLocaleString() || '0'}</strong>
+                        <small className="text-muted">{formatTime(violation.timestamp || violation.createdAt)}</small>
+                      </td>
+                      <td>
+                        <span className="fine-amount">
+                          ₹{(violation.fineAmount || 0).toLocaleString('en-IN')}
+                        </span>
                       </td>
                       <td>
                         <Button 
                           variant="outline-primary" 
                           size="sm"
-                          onClick={() => navigate(`/violations/${violation.violationId || violation._id}`)}
+                          onClick={() => navigate(`/violations/${violation._id || violation.violationId}`)}
+                          className="action-btn"
                         >
-                          View
+                          <i className="bi bi-eye"></i>
                         </Button>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="8" className="text-center py-4">
-                      <p className="text-muted mb-2">No violations recorded yet</p>
-                      {userRole === 'admin' && (
-                        <Button variant="primary" size="sm" onClick={() => navigate('/upload')}>
-                          Upload Your First Violation
-                        </Button>
-                      )}
+                    <td colSpan="9">
+                      <div className="empty-state">
+                        <i className="bi bi-inbox"></i>
+                        <h5>No Violations Yet</h5>
+                        <p className="text-muted">Traffic violations will appear here once detected</p>
+                        {userRole === 'admin' && (
+                          <Button 
+                            variant="primary" 
+                            size="sm"
+                            onClick={() => navigate('/upload')}
+                            className="mt-2"
+                          >
+                            <i className="bi bi-cloud-upload me-2"></i>
+                            Upload Media for Detection
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )}
               </tbody>
-            </table>
+            </Table>
           </div>
         </Card.Body>
       </Card>

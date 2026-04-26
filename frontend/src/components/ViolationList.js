@@ -12,6 +12,8 @@ import {
   Alert 
 } from 'react-bootstrap';
 import { violationsAPI } from '../api/api';
+import { getFineAmount, getFineDescription } from '../utils/trafficFines';
+import './ViolationList.css'; // ✅ ADD THIS LINE - Import the CSS
 
 const ViolationList = () => {
   const [violations, setViolations] = useState([]);
@@ -28,11 +30,9 @@ const ViolationList = () => {
     pages: 1
   });
   
-  // Get user role for access control
   const userRole = localStorage.getItem('userRole') || 'viewer';
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
-  // Fetch violations from backend
   const fetchViolations = useCallback(async () => {
     try {
       setLoading(true);
@@ -50,11 +50,35 @@ const ViolationList = () => {
       const response = await violationsAPI.getAll(params);
       
       if (response.success) {
-        setViolations(response.violations);
-        setFilteredViolations(response.violations);
-        setPagination(response.pagination);
+        let fetchedViolations = response.violations || [];
+        
+        if (userRole === 'viewer' && user.vehicleNumber) {
+          fetchedViolations = fetchedViolations.filter(
+            v => v.vehicleNumber === user.vehicleNumber
+          );
+        }
+        
+        setViolations(fetchedViolations);
+        setFilteredViolations(fetchedViolations);
+        
+        if (userRole === 'viewer' && user.vehicleNumber) {
+          const totalFiltered = fetchedViolations.length;
+          setPagination({
+            ...response.pagination,
+            total: totalFiltered,
+            pages: Math.ceil(totalFiltered / pagination.limit)
+          });
+        } else {
+          setPagination(response.pagination || {
+            page: 1,
+            limit: 10,
+            total: fetchedViolations.length,
+            pages: Math.ceil(fetchedViolations.length / pagination.limit)
+          });
+        }
+        
         setError('');
-        console.log(`✅ Loaded ${response.violations.length} violations`);
+        console.log(`✅ Loaded ${fetchedViolations.length} violations`);
       } else {
         setError('Failed to load violations');
       }
@@ -64,17 +88,16 @@ const ViolationList = () => {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.limit, filterType, filterStatus]);
+  }, [pagination.page, pagination.limit, filterType, filterStatus, userRole, user.vehicleNumber]);
 
-  // Load violations on component mount
   useEffect(() => {
     fetchViolations();
   }, [fetchViolations]);
 
-  // Listen for new violations from upload
   useEffect(() => {
     const handleViolationsUpdate = () => {
       console.log('🔄 Violations updated, refreshing list...');
+      setPagination(prev => ({ ...prev, page: 1 }));
       fetchViolations();
     };
     
@@ -82,17 +105,8 @@ const ViolationList = () => {
     return () => window.removeEventListener('violationsUpdated', handleViolationsUpdate);
   }, [fetchViolations]);
 
-  // Apply filters and search locally
   useEffect(() => {
     let filtered = [...violations];
-    
-    if (filterType !== 'all') {
-      filtered = filtered.filter(v => v.type === filterType);
-    }
-    
-    if (filterStatus !== 'all') {
-      filtered = filtered.filter(v => v.status === filterStatus);
-    }
     
     if (search.trim()) {
       const searchLower = search.toLowerCase();
@@ -104,7 +118,7 @@ const ViolationList = () => {
     }
     
     setFilteredViolations(filtered);
-  }, [violations, filterType, filterStatus, search]);
+  }, [violations, search]);
 
   const updateStatus = async (id, newStatus) => {
     if (userRole !== 'admin') {
@@ -122,11 +136,43 @@ const ViolationList = () => {
         setViolations(updatedViolations);
         window.dispatchEvent(new CustomEvent('violationsUpdated'));
         alert(`Status updated to ${newStatus}`);
+      } else {
+        alert('Failed to update status');
       }
     } catch (error) {
       console.error('Error updating status:', error);
       alert('Failed to update status');
     }
+  };
+
+  const getDisplayFineAmount = (violation) => {
+    if (violation.fineAmount) return violation.fineAmount;
+    if (violation.fine) return violation.fine;
+    if (violation.amount) return violation.amount;
+    
+    const violationType = violation.type || violation.violationType || violation.violation_type;
+    return getFineAmount(violationType);
+  };
+
+  const handlePageChange = (newPage) => {
+    setPagination(prev => ({
+      ...prev,
+      page: newPage
+    }));
+  };
+
+  const handleFilterTypeChange = (e) => {
+    setFilterType(e.target.value);
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const handleFilterStatusChange = (e) => {
+    setFilterStatus(e.target.value);
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const handleRefresh = () => {
+    fetchViolations();
   };
 
   const getStatusBadge = (status) => {
@@ -148,7 +194,15 @@ const ViolationList = () => {
       no_seatbelt: 'info',
       triple_riding: 'secondary',
       wrong_route: 'primary',
-      no_helmet: 'dark'
+      no_helmet: 'dark',
+      driving_without_licence: 'danger',
+      driving_without_license: 'danger',
+      driving_without_insurance: 'warning',
+      mobile_phone_usage: 'info',
+      drunk_driving: 'danger',
+      dangerous_driving: 'danger',
+      wrong_parking: 'secondary',
+      no_puc: 'info'
     };
     const label = type ? type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : 'Unknown';
     return <Badge bg={colors[type] || 'secondary'}>{label}</Badge>;
@@ -186,7 +240,6 @@ const ViolationList = () => {
       
       {error && <Alert variant="danger">{error}</Alert>}
 
-      {/* Stats Summary */}
       <Row className="mb-3">
         <Col md={3}>
           <Card className="text-center bg-light">
@@ -200,7 +253,7 @@ const ViolationList = () => {
           <Card className="text-center bg-light">
             <Card.Body>
               <h5>Displaying</h5>
-              <h3>{filteredViolations.length} / {violations.length}</h3>
+              <h3>{filteredViolations.length}</h3>
             </Card.Body>
           </Card>
         </Col>
@@ -208,14 +261,21 @@ const ViolationList = () => {
           <Card className="bg-light">
             <Card.Body>
               <div className="d-flex justify-content-between align-items-center">
-                <span>Page {pagination.page} of {pagination.pages}</span>
+                <span>Page {pagination.page} of {pagination.pages || 1}</span>
                 <Button 
                   variant="outline-primary" 
                   size="sm"
-                  onClick={fetchViolations}
+                  onClick={handleRefresh}
                   disabled={loading}
                 >
-                  ↻ Refresh
+                  {loading ? (
+                    <>
+                      <Spinner size="sm" animation="border" className="me-2" />
+                      Loading...
+                    </>
+                  ) : (
+                    '↻ Refresh'
+                  )}
                 </Button>
               </div>
             </Card.Body>
@@ -232,17 +292,11 @@ const ViolationList = () => {
                 <Form.Label>Violation Type</Form.Label>
                 <Form.Select 
                   value={filterType} 
-                  onChange={(e) => {
-                    setFilterType(e.target.value);
-                    setPagination({...pagination, page: 1});
-                  }}
+                  onChange={handleFilterTypeChange}
                 >
                   <option value="all">All Types</option>
-                  <option value="signal_violation">Signal Violation</option>
-                  <option value="overspeeding">Overspeeding</option>
-                  <option value="no_seatbelt">No Seatbelt</option>
+                  <option value="signal_violation">Overloading</option>
                   <option value="triple_riding">Triple Riding</option>
-                  <option value="wrong_route">Wrong Route</option>
                   <option value="no_helmet">No Helmet</option>
                 </Form.Select>
               </Form.Group>
@@ -252,10 +306,7 @@ const ViolationList = () => {
                 <Form.Label>Status</Form.Label>
                 <Form.Select 
                   value={filterStatus} 
-                  onChange={(e) => {
-                    setFilterStatus(e.target.value);
-                    setPagination({...pagination, page: 1});
-                  }}
+                  onChange={handleFilterStatusChange}
                 >
                   <option value="all">All Status</option>
                   <option value="detected">Detected</option>
@@ -275,11 +326,7 @@ const ViolationList = () => {
                     placeholder="Search by Vehicle Number or ID..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && setFilteredViolations([...filteredViolations])}
                   />
-                  <Button variant="outline-primary" onClick={() => setFilteredViolations([...filteredViolations])}>
-                    Search
-                  </Button>
                   {search && (
                     <Button variant="outline-secondary" onClick={() => setSearch('')}>
                       Clear
@@ -344,82 +391,103 @@ const ViolationList = () => {
                     </td>
                   </tr>
                 ) : (
-                  filteredViolations.map((violation) => (
-                    <tr key={violation._id || violation.violationId || Math.random()}>
-                      <td>
-                        <small className="text-muted">
-                          {(violation.violationId || violation._id || '').slice(0, 8)}...
-                        </small>
-                      </td>
-                      <td>{getTypeBadge(violation.type)}</td>
-                      <td>
-                        <div><strong>{violation.vehicleNumber || 'N/A'}</strong></div>
-                        <small className="text-muted">{violation.vehicleType || 'Unknown'}</small>
-                      </td>
-                      <td>
-                        <small>{violation.location?.address || violation.location || 'N/A'}</small>
-                      </td>
-                      <td>
-                        <small>{formatDate(violation.timestamp || violation.createdAt)}</small>
-                      </td>
-                      <td>
-                        <div className="d-flex align-items-center">
-                          <div className="progress flex-grow-1 me-2" style={{ height: '6px', width: '60px' }}>
-                            <div 
-                              className={`progress-bar bg-${(violation.confidence || 0.8) > 0.8 ? 'success' : 'warning'}`}
-                              style={{ width: `${(violation.confidence || 0.8) * 100}%` }}
-                            />
-                          </div>
-                          <small>{Math.round((violation.confidence || 0.8) * 100)}%</small>
-                        </div>
-                      </td>
-                      <td>{getStatusBadge(violation.status)}</td>
-                      <td>
-                        <strong className="text-success">₹{violation.fineAmount?.toLocaleString() || '0'}</strong>
-                      </td>
-                      {userRole === 'admin' && (
+                  filteredViolations.map((violation) => {
+                    const fineAmount = getDisplayFineAmount(violation);
+                    const violationType = violation.type || violation.violationType || 'Unknown';
+                    
+                    return (
+                      <tr key={violation._id || violation.violationId || Math.random()}>
                         <td>
-                          <div className="btn-group">
-                            <Button size="sm" variant="outline-primary" onClick={() => alert(JSON.stringify(violation, null, 2))}>
-                              View
-                            </Button>
-                            {violation.status !== 'fined' && (
-                              <Button 
-                                size="sm" 
-                                variant="outline-success"
-                                onClick={() => updateStatus(violation.violationId || violation._id, 'fined')}
-                              >
-                                Mark Fined
-                              </Button>
-                            )}
+                          <small className="text-muted">
+                            {(violation.violationId || violation._id || '').slice(0, 8)}...
+                          </small>
+                        </td>
+                        <td>
+                          {getTypeBadge(violationType)}
+                          <small 
+                            className="d-block text-muted mt-1" 
+                            style={{ fontSize: '10px' }}
+                            title={getFineDescription(violationType)}
+                          >
+                            {getFineDescription(violationType).split('-')[0].trim()}
+                          </small>
+                        </td>
+                        <td>
+                          <div><strong>{violation.vehicleNumber || 'N/A'}</strong></div>
+                          <small className="text-muted">{violation.vehicleType || 'Unknown'}</small>
+                        </td>
+                        <td>
+                          <small>{violation.location?.address || violation.location || 'N/A'}</small>
+                        </td>
+                        <td>
+                          <small>{formatDate(violation.timestamp || violation.createdAt)}</small>
+                        </td>
+                        <td>
+                          <div className="d-flex align-items-center">
+                            <div className="progress flex-grow-1 me-2" style={{ height: '6px', width: '60px' }}>
+                              <div 
+                                className={`progress-bar bg-${(violation.confidence || 0.8) > 0.8 ? 'success' : 'warning'}`}
+                                style={{ width: `${(violation.confidence || 0.8) * 100}%` }}
+                              />
+                            </div>
+                            <small>{Math.round((violation.confidence || 0.8) * 100)}%</small>
                           </div>
                         </td>
-                      )}
-                    </tr>
-                  ))
+                        <td>{getStatusBadge(violation.status)}</td>
+                        <td>
+                          <strong className="text-success">
+                            ₹{fineAmount.toLocaleString()}
+                          </strong>
+                        </td>
+                        {userRole === 'admin' && (
+                          <td>
+                            <div className="btn-group">
+                              <Button 
+                                size="sm" 
+                                variant="outline-primary" 
+                                onClick={() => console.log(violation)}
+                              >
+                                View
+                              </Button>
+                              {violation.status !== 'fined' && (
+                                <Button 
+                                  size="sm" 
+                                  variant="outline-success"
+                                  onClick={() => updateStatus(violation.violationId || violation._id, 'fined')}
+                                >
+                                  Mark Fined
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </Table>
           </div>
 
-          {/* Pagination */}
           {pagination.pages > 1 && (
             <div className="d-flex justify-content-center align-items-center mt-3">
               <Button
                 variant="outline-primary"
                 size="sm"
-                disabled={pagination.page === 1}
-                onClick={() => setPagination({...pagination, page: pagination.page - 1})}
+                disabled={pagination.page === 1 || loading}
+                onClick={() => handlePageChange(pagination.page - 1)}
                 className="me-2"
               >
                 Previous
               </Button>
-              <span className="mx-3">Page {pagination.page} of {pagination.pages}</span>
+              <span className="mx-3">
+                Page {pagination.page} of {pagination.pages}
+              </span>
               <Button
                 variant="outline-primary"
                 size="sm"
-                disabled={pagination.page === pagination.pages}
-                onClick={() => setPagination({...pagination, page: pagination.page + 1})}
+                disabled={pagination.page === pagination.pages || loading}
+                onClick={() => handlePageChange(pagination.page + 1)}
                 className="ms-2"
               >
                 Next

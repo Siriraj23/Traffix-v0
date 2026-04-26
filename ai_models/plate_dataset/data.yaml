@@ -1,6 +1,13 @@
-path: `
-train: C:/Users/Admin/Traffix-v0/ai_models/plate_dataset/train/images
-val: C:/Users/Admin/Traffix-v0/ai_models/plate_dataset/valid/images
+train: ../train/images
+val: ../valid/images
+test: ../test/images
 
 nc: 1
-names: ['number_plate']
+names: ['license_plate']
+
+roboflow:
+  workspace: holi-milan
+  project: indian-license-plate-detection-6tmbr
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/holi-milan/indian-license-plate-detection-6tmbr/dataset/1

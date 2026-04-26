@@ -1,15 +1,53 @@
-import React, { useEffect, useState } from 'react';
-import { Container, Row, Col, Card, Button, Form } from 'react-bootstrap';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Container, Row, Col, Card, Button, Form, Spinner, Badge } from 'react-bootstrap';
+import { FaUser, FaCar, FaExclamationTriangle, FaCheckCircle, FaClock, FaEdit, FaSave } from 'react-icons/fa';
 import { violationsAPI } from '../api/api';
+import { getFineAmount } from '../utils/trafficFines';
+import './Profile.css';
 
 const Profile = () => {
   const [user, setUser] = useState({});
   const [violations, setViolations] = useState([]);
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [saving, setSaving] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const userRole = localStorage.getItem('userRole');
   const isAdmin = userRole === 'admin';
+
+  const fetchUserViolations = useCallback(async (vehicleNo) => {
+    try {
+      console.log('📊 Fetching all violations for profile...');
+      
+      const response = await violationsAPI.getAllWithoutPagination();
+
+      if (response.success) {
+        let allViolations = response.violations || [];
+        
+        console.log(`📊 Total violations fetched: ${allViolations.length}`);
+
+        if (!isAdmin && vehicleNo) {
+          allViolations = allViolations.filter(
+            v => v.vehicleNumber === vehicleNo
+          );
+          console.log(`📊 Filtered for vehicle ${vehicleNo}: ${allViolations.length} violations`);
+        }
+
+        setViolations(allViolations);
+        
+        if (allViolations.length > 0) {
+          console.log('📊 Sample violation:', allViolations[0]);
+        }
+      } else {
+        console.error('❌ Failed to fetch violations:', response.error);
+        setViolations([]);
+      }
+    } catch (err) {
+      console.error('❌ Error fetching violations:', err);
+      setViolations([]);
+    }
+  }, [isAdmin]);
 
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('user'));
@@ -19,34 +57,9 @@ const Profile = () => {
       setVehicleNumber(userData.vehicleNumber || '');
       fetchUserViolations(userData.vehicleNumber);
     }
-  }, []);
+    setLoading(false);
+  }, [fetchUserViolations]);
 
-  // ✅ FETCH ONLY USER VEHICLE VIOLATIONS
-  const fetchUserViolations = async (vehicleNo) => {
-    try {
-      const response = await violationsAPI.getAll();
-
-      if (response.success) {
-        let allViolations = response.violations || [];
-
-        // 🔥 FILTER FOR PUBLIC USER
-        if (!isAdmin && vehicleNo) {
-          allViolations = allViolations.filter(
-            v => v.vehicleNumber === vehicleNo
-          );
-        }
-
-        setViolations(allViolations);
-      } else {
-        setViolations([]);
-      }
-    } catch (err) {
-      console.error('Error fetching violations:', err);
-      setViolations([]);
-    }
-  };
-
-  // ✅ UPDATE VEHICLE NUMBER
   const handleUpdateVehicle = () => {
     if (!vehicleNumber.trim()) {
       alert("Please enter vehicle number");
@@ -55,124 +68,366 @@ const Profile = () => {
 
     setSaving(true);
 
-    // Simulate save (or replace with backend API)
     setTimeout(() => {
       const updatedUser = { ...user, vehicleNumber };
       localStorage.setItem('user', JSON.stringify(updatedUser));
       setUser(updatedUser);
-
-      // 🔥 REFETCH violations
       fetchUserViolations(vehicleNumber);
-
       setSaving(false);
-      alert("Vehicle number updated!");
+      setIsEditing(false);
+      alert("Vehicle number updated successfully!");
     }, 500);
   };
 
-  // ✅ CALCULATIONS
+  const getViolationFine = (violation) => {
+    if (violation.fineAmount) return violation.fineAmount;
+    if (violation.fine) return violation.fine;
+    if (violation.amount) return violation.amount;
+    
+    const violationType = violation.type || violation.violationType;
+    return getFineAmount(violationType);
+  };
+
   const totalViolations = violations.length;
+  
+  const pendingViolations = violations.filter(v => {
+    const status = (v.status || '').toLowerCase();
+    return status !== 'fined' && status !== 'paid' && status !== 'resolved';
+  });
+  
+  const resolvedViolations = violations.filter(v => {
+    const status = (v.status || '').toLowerCase();
+    return status === 'fined' || status === 'paid' || status === 'resolved';
+  });
 
   const pendingFines = isAdmin
     ? 0
-    : violations
-        .filter(v => v.status !== 'fined')
-        .reduce((sum, v) => sum + (v.fineAmount || 0), 0);
+    : pendingViolations.reduce((sum, v) => sum + getViolationFine(v), 0);
 
   const paidFines = isAdmin
     ? 0
-    : violations
-        .filter(v => v.status === 'fined')
-        .reduce((sum, v) => sum + (v.fineAmount || 0), 0);
+    : resolvedViolations.reduce((sum, v) => sum + getViolationFine(v), 0);
+
+  console.log('📊 Profile Stats:', {
+    totalViolations,
+    pendingCount: pendingViolations.length,
+    resolvedCount: resolvedViolations.length,
+    pendingFines,
+    paidFines
+  });
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      return new Date(dateString).toLocaleDateString('en-IN', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch (e) {
+      return dateString;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="profile-loading">
+        <Spinner animation="border" variant="primary" />
+        <p>Loading profile...</p>
+      </div>
+    );
+  }
 
   return (
-    <Container className="py-4">
-      <h2 className="mb-4">
-        {isAdmin ? '👮 Admin Profile' : '👤 My Profile'}
-      </h2>
-
-      <Row>
-        {/* LEFT CARD */}
-        <Col md={4}>
-          <Card className="text-center p-4 shadow">
-            <h4>{user.username}</h4>
-            <p className="text-muted">{user.email}</p>
-
-            <span
-              className={`badge mb-3 ${
-                isAdmin ? 'bg-danger' : 'bg-info'
-              }`}
-            >
-              {isAdmin ? '👮 Admin' : '👤 Public User'}
-            </span>
-
-            <hr />
-
-            <h3>{totalViolations}</h3>
-            <p>Total Violations</p>
-
-            {!isAdmin && (
-              <>
-                <p className="text-danger fw-bold">
-                  ₹{pendingFines.toLocaleString()}
-                </p>
-                <p>Pending Fines</p>
-
-                <p className="text-success fw-bold">
-                  ₹{paidFines.toLocaleString()}
-                </p>
-                <p>Paid Fines</p>
-              </>
-            )}
-
-            {isAdmin && (
-              <p className="text-muted">
-                Admins can view and manage all violations
+    <div className="profile-page">
+      <Container fluid className="py-4">
+        <div className="profile-header mb-4">
+          <div className="d-flex align-items-center">
+            <div className="profile-avatar">
+              {user.username?.charAt(0).toUpperCase()}
+            </div>
+            <div className="ms-3">
+              <h2 className="profile-title mb-0">
+                {isAdmin ? 'Administrator Dashboard' : `Welcome back, ${user.username}`}
+              </h2>
+              <p className="profile-subtitle mb-0">
+                {isAdmin ? 'System Management & Overview' : 'Manage your profile and track violations'}
               </p>
-            )}
-          </Card>
-        </Col>
+            </div>
+          </div>
+          <Badge 
+            bg={isAdmin ? 'danger' : 'primary'} 
+            className="role-badge"
+          >
+            {isAdmin ? 'Administrator' : 'Citizen User'}
+          </Badge>
+        </div>
 
-        {/* RIGHT CARD */}
-        <Col md={8}>
-          <Card className="p-4 shadow">
-            <h5 className="mb-3">Personal Information</h5>
+        <Row className="g-4">
+          <Col lg={12}>
+            <Row className="g-3">
+              <Col md={4}>
+                <Card className="stat-card">
+                  <Card.Body>
+                    <div className="stat-icon-wrapper blue">
+                      <FaExclamationTriangle />
+                    </div>
+                    <div className="stat-content">
+                      <h3 className="stat-value">{totalViolations}</h3>
+                      <p className="stat-label">Total Violations</p>
+                    </div>
+                  </Card.Body>
+                </Card>
+              </Col>
 
-            <p><strong>Username:</strong> {user.username}</p>
-            <p><strong>Email:</strong> {user.email}</p>
-            <p><strong>Phone:</strong> {user.phone || 'N/A'}</p>
+              {!isAdmin && (
+                <>
+                  <Col md={4}>
+                    <Card className="stat-card">
+                      <Card.Body>
+                        <div className="stat-icon-wrapper orange">
+                          <FaClock />
+                        </div>
+                        <div className="stat-content">
+                          <h3 className="stat-value">₹{pendingFines.toLocaleString()}</h3>
+                          <p className="stat-label">Pending Fines</p>
+                          <small className="text-muted">
+                            ({pendingViolations.length} pending)
+                          </small>
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  </Col>
 
-            {/* 🔥 PUBLIC USER VEHICLE INPUT */}
-            {!isAdmin && (
-              <>
-                <Form.Group className="mt-3">
-                  <Form.Label><strong>Vehicle Number</strong></Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={vehicleNumber}
-                    onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
-                    placeholder="Enter vehicle number (e.g. TN01AB1234)"
-                  />
-                </Form.Group>
+                  <Col md={4}>
+                    <Card className="stat-card">
+                      <Card.Body>
+                        <div className="stat-icon-wrapper green">
+                          <FaCheckCircle />
+                        </div>
+                        <div className="stat-content">
+                          <h3 className="stat-value">₹{paidFines.toLocaleString()}</h3>
+                          <p className="stat-label">Paid Fines</p>
+                          <small className="text-muted">
+                            ({resolvedViolations.length} resolved)
+                          </small>
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                </>
+              )}
 
-                <Button
-                  className="mt-2"
-                  onClick={handleUpdateVehicle}
-                  disabled={saving}
-                >
-                  {saving ? "Saving..." : "Update Vehicle"}
-                </Button>
-              </>
-            )}
+              {isAdmin && (
+                <>
+                  <Col md={4}>
+                    <Card className="stat-card">
+                      <Card.Body>
+                        <div className="stat-icon-wrapper orange">
+                          <FaClock />
+                        </div>
+                        <div className="stat-content">
+                          <h3 className="stat-value">{pendingViolations.length}</h3>
+                          <p className="stat-label">Pending Cases</p>
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  </Col>
 
-            {isAdmin && (
-              <p className="text-muted">
-                Vehicle information not applicable for admin
-              </p>
-            )}
-          </Card>
-        </Col>
-      </Row>
-    </Container>
+                  <Col md={4}>
+                    <Card className="stat-card">
+                      <Card.Body>
+                        <div className="stat-icon-wrapper green">
+                          <FaCheckCircle />
+                        </div>
+                        <div className="stat-content">
+                          <h3 className="stat-value">{resolvedViolations.length}</h3>
+                          <p className="stat-label">Resolved Cases</p>
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                </>
+              )}
+            </Row>
+          </Col>
+
+          <Col lg={5}>
+            <Card className="profile-info-card">
+              <Card.Header className="card-header-custom">
+                <h5 className="mb-0">
+                  <FaUser className="me-2" />
+                  Personal Information
+                </h5>
+              </Card.Header>
+              <Card.Body>
+                <div className="info-group">
+                  <label className="info-label">Username</label>
+                  <p className="info-value">{user.username}</p>
+                </div>
+
+                <div className="info-group">
+                  <label className="info-label">Email Address</label>
+                  <p className="info-value">{user.email}</p>
+                </div>
+
+                <div className="info-group">
+                  <label className="info-label">Phone Number</label>
+                  <p className="info-value">{user.phone || 'Not provided'}</p>
+                </div>
+
+                {!isAdmin && (
+                  <div className="vehicle-section mt-4">
+                    <div className="d-flex align-items-center justify-content-between mb-3">
+                      <label className="info-label mb-0">
+                        <FaCar className="me-2" />
+                        Registered Vehicle
+                      </label>
+                      {!isEditing && (
+                        <Button 
+                          variant="link" 
+                          className="edit-btn p-0"
+                          onClick={() => setIsEditing(true)}
+                        >
+                          <FaEdit /> Edit
+                        </Button>
+                      )}
+                    </div>
+
+                    {isEditing ? (
+                      <div className="vehicle-edit">
+                        <Form.Group>
+                          <Form.Control
+                            type="text"
+                            value={vehicleNumber}
+                            onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
+                            placeholder="Enter vehicle number (e.g., TN01AB1234)"
+                            className="vehicle-input"
+                          />
+                          <div className="input-hint">
+                            Format: State Code + District + Series + Number
+                          </div>
+                        </Form.Group>
+                        <div className="button-group mt-3">
+                          <Button
+                            variant="primary"
+                            onClick={handleUpdateVehicle}
+                            disabled={saving}
+                            className="save-btn"
+                          >
+                            {saving ? (
+                              <>
+                                <Spinner size="sm" animation="border" className="me-2" />
+                                Saving...
+                              </>
+                            ) : (
+                              <>
+                                <FaSave className="me-2" />
+                                Save Changes
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            variant="outline-secondary"
+                            onClick={() => {
+                              setIsEditing(false);
+                              setVehicleNumber(user.vehicleNumber || '');
+                            }}
+                            className="cancel-btn"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="vehicle-display">
+                        {vehicleNumber ? (
+                          <div className="vehicle-number-badge">
+                            {vehicleNumber}
+                          </div>
+                        ) : (
+                          <p className="text-muted">No vehicle registered</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isAdmin && (
+                  <div className="admin-note mt-4">
+                    <div className="info-message">
+                      <FaCheckCircle className="me-2 text-success" />
+                      Administrator accounts have full system access and management capabilities.
+                    </div>
+                  </div>
+                )}
+              </Card.Body>
+            </Card>
+          </Col>
+
+          <Col lg={7}>
+            <Card className="activity-card">
+              <Card.Header className="card-header-custom">
+                <h5 className="mb-0">
+                  <FaExclamationTriangle className="me-2" />
+                  Recent Violations ({totalViolations} total)
+                </h5>
+              </Card.Header>
+              <Card.Body>
+                {violations.length > 0 ? (
+                  <div className="violations-list">
+                    {violations.slice(0, 10).map((violation, index) => {
+                      const fineAmount = getViolationFine(violation);
+                      const violationType = violation.type || violation.violationType || 'Unknown';
+                      const status = (violation.status || 'pending').toLowerCase();
+                      
+                      return (
+                        <div key={index} className="violation-item">
+                          <div className="violation-icon">
+                            <FaExclamationTriangle />
+                          </div>
+                          <div className="violation-details">
+                            <div className="violation-header">
+                              <span className="violation-type">
+                                {violationType.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                              </span>
+                              <Badge 
+                                bg={status === 'fined' || status === 'paid' ? 'success' : 'warning'}
+                                className="status-badge"
+                              >
+                                {violation.status || 'Pending'}
+                              </Badge>
+                            </div>
+                            <div className="violation-meta">
+                              <span>Vehicle: {violation.vehicleNumber}</span>
+                              <span>Date: {formatDate(violation.timestamp || violation.createdAt || violation.date)}</span>
+                              <span>Fine: ₹{fineAmount.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {violations.length > 10 && (
+                      <div className="text-center mt-3">
+                        <small className="text-muted">
+                          + {violations.length - 10} more violations
+                        </small>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <FaCheckCircle className="empty-icon" />
+                    <p className="empty-text">No violations found</p>
+                    <p className="empty-subtext">Your driving record is clean!</p>
+                  </div>
+                )}
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
+      </Container>
+    </div>
   );
 };
 
