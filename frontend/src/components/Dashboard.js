@@ -13,7 +13,7 @@ import {
   Legend,
   Filler
 } from 'chart.js';
-import { dashboardAPI } from '../api/api';
+import { dashboardAPI, violationsAPI } from '../api/api';
 import { useNavigate } from 'react-router-dom';
 import { 
   FaExclamationTriangle, 
@@ -28,7 +28,9 @@ import {
   FaChartBar,
   FaChartLine,
   FaListUl,
-  FaInbox
+  FaInbox,
+  FaChevronLeft,
+  FaChevronRight
 } from 'react-icons/fa';
 import './Dashboard.css';
 
@@ -43,6 +45,9 @@ ChartJS.register(
   Legend,
   Filler
 );
+
+// Storage key for saved violations
+const SAVED_VIOLATIONS_KEY = 'traffic_saved_violations';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -62,13 +67,17 @@ const Dashboard = () => {
   const [dailyData, setDailyData] = useState([]);
   const [retryCount, setRetryCount] = useState(0);
 
+  // ---- Pagination state ----
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+  // -------------------------
+
   // Fetch dashboard data from backend
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
       
-      // Types to EXCLUDE from graph
       const excludedTypes = ['overspeeding', 'no_seatbelt', 'signal_violation'];
       
       console.log(`📊 Fetching dashboard data... (Attempt ${retryCount + 1})`);
@@ -86,19 +95,52 @@ const Dashboard = () => {
           totalFines: responseData.stats?.totalFines || 0
         });
         
-        // Filter out excluded types
         const filteredTypes = (responseData.byType || []).filter(
           item => !excludedTypes.includes(item._id)
         );
         setByType(filteredTypes);
         
-        // Fetch recent violations separately
+        // Fetch recent violations
         const recentResponse = await dashboardAPI.getRecentViolations(10);
+        let recentData = [];
+        
         if (recentResponse.success) {
-          const recentData = recentResponse.data?.data || recentResponse.data || [];
-          setRecentViolations(Array.isArray(recentData) ? recentData : []);
-          generateDailyData(Array.isArray(recentData) ? recentData : []);
+          recentData = recentResponse.data?.data || recentResponse.data || [];
+          if (!Array.isArray(recentData)) {
+            recentData = recentResponse.data?.violations || [];
+          }
         }
+        
+        // Add saved violations from localStorage
+        try {
+          const savedViolations = JSON.parse(localStorage.getItem(SAVED_VIOLATIONS_KEY) || '[]');
+          savedViolations.forEach(v => {
+            const exists = recentData.find(rv => 
+              (rv.vehicleNumber === v.vehicleNumber) && 
+              (rv.type === v.type)
+            );
+            if (!exists) {
+              recentData.push({
+                _id: v._id || `local_${Date.now()}`,
+                violationId: v.violationId || `LOC-${Date.now()}`,
+                type: v.type,
+                vehicleNumber: v.vehicleNumber,
+                fineAmount: v.fineAmount || v.fine || 1000,
+                confidence: v.confidence || 0.85,
+                status: v.status || 'detected',
+                timestamp: v.savedAt || v.timestamp || new Date().toISOString(),
+                createdAt: v.savedAt || new Date().toISOString(),
+                isSaved: true
+              });
+            }
+          });
+        } catch (e) {
+          console.warn('Error reading saved violations:', e);
+        }
+        
+        setRecentViolations(Array.isArray(recentData) ? recentData : []);
+        setCurrentPage(1); // reset to first page on new data
+        generateDailyData(Array.isArray(recentData) ? recentData : []);
         
         window.dispatchEvent(new CustomEvent('dashboardDataLoaded', { 
           detail: responseData 
@@ -110,7 +152,7 @@ const Dashboard = () => {
     } catch (err) {
       console.error('❌ Dashboard Error:', err);
       
-      if (err.code === 'ERR_NETWORK' || err.message.includes('Network Error')) {
+      if (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error')) {
         setError('Cannot connect to server. Please ensure backend is running on port 5001.');
       } else if (err.response?.status === 500) {
         setError('Server error occurred. Please check server logs.');
@@ -139,7 +181,7 @@ const Dashboard = () => {
     }
     
     violations.forEach(v => {
-      const vDate = new Date(v.timestamp || v.createdAt);
+      const vDate = new Date(v.timestamp || v.createdAt || v.savedAt);
       const vDateStr = vDate.toDateString();
       const dayData = last7Days.find(d => d.date === vDateStr);
       if (dayData) dayData.count++;
@@ -155,15 +197,19 @@ const Dashboard = () => {
     const interval = setInterval(fetchDashboardData, 30000);
     
     const handleViolationsUpdate = () => {
-      console.log('🔄 Violations updated, refreshing...');
+      console.log('🔄 Violations updated, refreshing dashboard...');
       fetchDashboardData();
     };
     
     window.addEventListener('violationsUpdated', handleViolationsUpdate);
+    window.addEventListener('violationSaved', handleViolationsUpdate);
+    window.addEventListener('violationsBatchSaved', handleViolationsUpdate);
     
     return () => {
       clearInterval(interval);
       window.removeEventListener('violationsUpdated', handleViolationsUpdate);
+      window.removeEventListener('violationSaved', handleViolationsUpdate);
+      window.removeEventListener('violationsBatchSaved', handleViolationsUpdate);
     };
   }, [fetchDashboardData]);
 
@@ -174,21 +220,67 @@ const Dashboard = () => {
 
   // Action handlers for table
   const handleViewViolation = (id) => {
-    navigate(`/violations/${id}`);
-  };
-
-  const handleEditViolation = (id) => {
-    navigate(`/violations/edit/${id}`);
-  };
-
-  const handleDeleteViolation = (id) => {
-    if (window.confirm('Are you sure you want to delete this violation?')) {
-      console.log('Delete violation:', id);
-      // Add delete API call here
+    if (id) {
+      navigate(`/violations?view=${id}`);
     }
   };
 
-  // Prepare chart data - only for allowed types
+  const handleEditViolation = (id) => {
+    if (id) {
+      navigate(`/violations?edit=${id}`);
+    }
+  };
+
+  const handleDeleteViolation = async (id) => {
+    if (!id) return;
+    
+    if (window.confirm('Are you sure you want to delete this violation?')) {
+      try {
+        // Try API delete
+        try {
+          await violationsAPI.delete(id);
+        } catch (apiErr) {
+          console.warn('API delete failed:', apiErr.message);
+        }
+        
+        // Remove from localStorage
+        const savedViolations = JSON.parse(localStorage.getItem(SAVED_VIOLATIONS_KEY) || '[]');
+        const filtered = savedViolations.filter(v => 
+          v._id !== id && v.violationId !== id
+        );
+        localStorage.setItem(SAVED_VIOLATIONS_KEY, JSON.stringify(filtered));
+        
+        // Update state
+        setRecentViolations(prev => prev.filter(v => 
+          v._id !== id && v.violationId !== id
+        ));
+        
+        window.dispatchEvent(new CustomEvent('violationsUpdated'));
+        alert('✅ Violation deleted successfully!');
+        fetchDashboardData();
+      } catch (err) {
+        console.error('Delete error:', err);
+        alert('Failed to delete violation');
+      }
+    }
+  };
+
+  // Pagination helpers
+  const totalPages = Math.ceil(recentViolations.length / itemsPerPage);
+  const paginatedViolations = recentViolations.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const handlePrevPage = () => {
+    setCurrentPage(prev => Math.max(prev - 1, 1));
+  };
+
+  const handleNextPage = () => {
+    setCurrentPage(prev => Math.min(prev + 1, totalPages));
+  };
+
+  // Prepare chart data
   const violationTypeLabels = {
     no_helmet: 'No Helmet',
     triple_riding: 'Triple Riding',
@@ -364,15 +456,10 @@ const Dashboard = () => {
   // Loading State
   if (loading && stats.totalViolations === 0) {
     return (
-      <div className="dashboard-loading">
-        <div className="loading-container">
-          <Spinner animation="border" variant="primary" className="loading-spinner" />
-          <h4 className="mt-4">Loading Dashboard</h4>
-          <p className="text-muted">Fetching latest traffic violation data...</p>
-          <div className="loading-dots">
-            <span></span><span></span><span></span>
-          </div>
-        </div>
+      <div className="dashboard-loading text-center py-5">
+        <Spinner animation="border" variant="primary" style={{width: '3rem', height: '3rem'}} />
+        <h4 className="mt-4">Loading Dashboard</h4>
+        <p className="text-muted">Fetching latest traffic violation data...</p>
       </div>
     );
   }
@@ -380,44 +467,33 @@ const Dashboard = () => {
   return (
     <div className="dashboard-container">
       {/* Header */}
-      <div className="dashboard-header">
-        <div className="header-left">
-          <h2 className="dashboard-title">
+      <div className="dashboard-header d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h2 className="dashboard-title mb-1">
             {userRole === 'admin' ? '🚔 Traffic Control Dashboard' : '📊 Violation Dashboard'}
           </h2>
-          <p className="dashboard-subtitle">
+          <p className="dashboard-subtitle text-muted mb-0">
             Welcome back, <strong>{user.fullName || user.username || 'User'}</strong>
             {userRole === 'admin' && (
-              <Badge bg="danger" className="ms-2 admin-badge">ADMIN</Badge>
+              <Badge bg="danger" className="ms-2">ADMIN</Badge>
             )}
           </p>
         </div>
-        <div className="header-actions">
+        <div className="d-flex gap-2">
           <Button 
             variant="outline-primary" 
             onClick={handleRetry}
             disabled={loading}
-            className="refresh-btn"
           >
-            {loading ? (
-              <>
-                <Spinner animation="border" size="sm" className="me-2" />
-                Refreshing...
-              </>
-            ) : (
-              <>
-                <FaSync className="me-2" />
-                Refresh
-              </>
-            )}
+            {loading ? <Spinner animation="border" size="sm" className="me-1" /> : <FaSync className="me-1" />}
+            Refresh
           </Button>
           {userRole === 'admin' && (
             <Button 
               variant="primary" 
               onClick={() => navigate('/upload')}
-              className="ms-2"
             >
-              <FaCloudUploadAlt className="me-2" />
+              <FaCloudUploadAlt className="me-1" />
               New Upload
             </Button>
           )}
@@ -426,7 +502,7 @@ const Dashboard = () => {
 
       {/* Error Alert */}
       {error && (
-        <Alert variant="danger" className="dashboard-alert">
+        <Alert variant="danger" className="mb-4">
           <div className="d-flex align-items-center">
             <FaExclamationTriangle className="me-3 fs-4" />
             <div className="flex-grow-1">
@@ -443,60 +519,60 @@ const Dashboard = () => {
         </Alert>
       )}
 
-      {/* Stats Cards with React Icons */}
-      <Row className="stats-row">
-        <Col xl={3} md={6} className="mb-4">
-          <Card className="stat-card stat-card-total">
-            <Card.Body>
-              <div className="stat-icon">
+      {/* Stats Cards */}
+      <Row className="g-3 mb-4">
+        <Col xl={3} md={6}>
+          <Card className="stat-card border-0 shadow-sm h-100">
+            <Card.Body className="d-flex align-items-center">
+              <div className="stat-icon me-3" style={{fontSize: '2rem', color: '#dc3545'}}>
                 <FaExclamationTriangle />
               </div>
-              <div className="stat-info">
-                <Card.Title className="stat-label">Total Violations</Card.Title>
-                <h2 className="stat-value">{formatNumber(stats.totalViolations)}</h2>
-                <small className="stat-footer">All time records</small>
+              <div>
+                <Card.Title className="stat-label text-muted small mb-1">Total Violations</Card.Title>
+                <h2 className="stat-value mb-0">{formatNumber(stats.totalViolations)}</h2>
+                <small className="text-muted">All time records</small>
               </div>
             </Card.Body>
           </Card>
         </Col>
-        <Col xl={3} md={6} className="mb-4">
-          <Card className="stat-card stat-card-today">
-            <Card.Body>
-              <div className="stat-icon">
+        <Col xl={3} md={6}>
+          <Card className="stat-card border-0 shadow-sm h-100">
+            <Card.Body className="d-flex align-items-center">
+              <div className="stat-icon me-3" style={{fontSize: '2rem', color: '#0d6efd'}}>
                 <FaCalendarCheck />
               </div>
-              <div className="stat-info">
-                <Card.Title className="stat-label">Today's Violations</Card.Title>
-                <h2 className="stat-value">{formatNumber(stats.todayViolations)}</h2>
-                <small className="stat-footer">Last 24 hours</small>
+              <div>
+                <Card.Title className="stat-label text-muted small mb-1">Today's Violations</Card.Title>
+                <h2 className="stat-value mb-0">{formatNumber(stats.todayViolations)}</h2>
+                <small className="text-muted">Last 24 hours</small>
               </div>
             </Card.Body>
           </Card>
         </Col>
-        <Col xl={3} md={6} className="mb-4">
-          <Card className="stat-card stat-card-pending">
-            <Card.Body>
-              <div className="stat-icon">
+        <Col xl={3} md={6}>
+          <Card className="stat-card border-0 shadow-sm h-100">
+            <Card.Body className="d-flex align-items-center">
+              <div className="stat-icon me-3" style={{fontSize: '2rem', color: '#ffc107'}}>
                 <FaHourglassHalf />
               </div>
-              <div className="stat-info">
-                <Card.Title className="stat-label">Pending Review</Card.Title>
-                <h2 className="stat-value">{formatNumber(stats.pendingReview)}</h2>
-                <small className="stat-footer">Awaiting action</small>
+              <div>
+                <Card.Title className="stat-label text-muted small mb-1">Pending Review</Card.Title>
+                <h2 className="stat-value mb-0">{formatNumber(stats.pendingReview)}</h2>
+                <small className="text-muted">Awaiting action</small>
               </div>
             </Card.Body>
           </Card>
         </Col>
-        <Col xl={3} md={6} className="mb-4">
-          <Card className="stat-card stat-card-fines">
-            <Card.Body>
-              <div className="stat-icon">
+        <Col xl={3} md={6}>
+          <Card className="stat-card border-0 shadow-sm h-100">
+            <Card.Body className="d-flex align-items-center">
+              <div className="stat-icon me-3" style={{fontSize: '2rem', color: '#198754'}}>
                 <FaMoneyBillWave />
               </div>
-              <div className="stat-info">
-                <Card.Title className="stat-label">Total Fines</Card.Title>
-                <h2 className="stat-value">{formatCurrency(stats.totalFines)}</h2>
-                <small className="stat-footer">Amount collected</small>
+              <div>
+                <Card.Title className="stat-label text-muted small mb-1">Total Fines</Card.Title>
+                <h2 className="stat-value mb-0">{formatCurrency(stats.totalFines)}</h2>
+                <small className="text-muted">Amount collected</small>
               </div>
             </Card.Body>
           </Card>
@@ -504,21 +580,18 @@ const Dashboard = () => {
       </Row>
 
       {/* Charts */}
-      <Row className="charts-row">
-        <Col lg={6} className="mb-4">
-          <Card className="chart-card">
-            <Card.Header className="chart-header">
-              <h5 className="mb-0">
-                <FaChartBar className="me-2" />
-                Violations by Type
-              </h5>
+      <Row className="g-3 mb-4">
+        <Col lg={6}>
+          <Card className="chart-card shadow-sm h-100">
+            <Card.Header className="bg-white">
+              <h5 className="mb-0"><FaChartBar className="me-2" />Violations by Type</h5>
             </Card.Header>
             <Card.Body>
-              <div className="chart-container">
+              <div style={{height: '300px'}}>
                 {byType.length > 0 ? (
                   <Bar data={violationsChartData} options={chartOptions} />
                 ) : (
-                  <div className="chart-empty">
+                  <div className="text-center py-5 text-muted">
                     <FaChartBar size={40} />
                     <p>No violation data available</p>
                   </div>
@@ -527,20 +600,17 @@ const Dashboard = () => {
             </Card.Body>
           </Card>
         </Col>
-        <Col lg={6} className="mb-4">
-          <Card className="chart-card">
-            <Card.Header className="chart-header">
-              <h5 className="mb-0">
-                <FaChartLine className="me-2" />
-                Daily Trend (7 Days)
-              </h5>
+        <Col lg={6}>
+          <Card className="chart-card shadow-sm h-100">
+            <Card.Header className="bg-white">
+              <h5 className="mb-0"><FaChartLine className="me-2" />Daily Trend (7 Days)</h5>
             </Card.Header>
             <Card.Body>
-              <div className="chart-container">
+              <div style={{height: '300px'}}>
                 {dailyData.some(d => d.count > 0) ? (
                   <Line data={dailyChartData} options={chartOptions} />
                 ) : (
-                  <div className="chart-empty">
+                  <div className="text-center py-5 text-muted">
                     <FaChartLine size={40} />
                     <p>No data for last 7 days</p>
                   </div>
@@ -551,37 +621,23 @@ const Dashboard = () => {
         </Col>
       </Row>
 
-      {/* Recent Violations Table with Action Buttons */}
-      <Card className="table-card">
-        <Card.Header className="table-header">
-          <div className="d-flex justify-content-between align-items-center">
-            <h5 className="mb-0">
-              <FaListUl className="me-2" />
-              Recent Violations
-            </h5>
-            <div>
-              <Button 
-                variant="outline-primary" 
-                size="sm" 
-                onClick={() => navigate('/violations')}
-                className="me-2"
-              >
-                View All
-              </Button>
-              <Button 
-                variant="outline-secondary" 
-                size="sm" 
-                onClick={handleRetry}
-              >
-                <FaSync />
-              </Button>
-            </div>
+      {/* Recent Violations Table with Pagination */}
+      <Card className="shadow-sm">
+        <Card.Header className="bg-white d-flex justify-content-between align-items-center">
+          <h5 className="mb-0"><FaListUl className="me-2" />Recent Violations</h5>
+          <div className="d-flex gap-2">
+            <Button variant="outline-primary" size="sm" onClick={() => navigate('/violations')}>
+              View All
+            </Button>
+            <Button variant="outline-secondary" size="sm" onClick={handleRetry}>
+              <FaSync />
+            </Button>
           </div>
         </Card.Header>
         <Card.Body className="p-0">
           <div className="table-responsive">
             <Table hover className="violations-table mb-0">
-              <thead>
+              <thead className="table-light">
                 <tr>
                   <th>ID</th>
                   <th>Type</th>
@@ -595,101 +651,92 @@ const Dashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {recentViolations.length > 0 ? (
-                  recentViolations.slice(0, 8).map((violation, index) => (
-                    <tr key={violation._id || violation.violationId || index}>
-                      <td>
-                        <small className="text-muted font-monospace">
-                          #{(violation._id || violation.violationId || '').slice(-6)}
-                        </small>
-                      </td>
-                      <td>
-                        <Badge bg={getTypeBadge(violation.type)} className="violation-badge">
-                          {formatViolationType(violation.type)}
-                        </Badge>
-                      </td>
-                      <td>
-                        <div className="fw-semibold">
-                          {violation.vehicleNumber || violation.vehicleId || 'N/A'}
-                        </div>
-                        <small className="text-muted">
-                          {violation.vehicleType || violation.details?.vehicleType || ''}
-                        </small>
-                      </td>
-                      <td>
-                        <div className="confidence-bar">
-                          <div 
-                            className="confidence-fill"
-                            style={{ width: `${(violation.confidence || 0) * 100}%` }}
-                          ></div>
-                        </div>
-                        <small className="text-muted">
-                          {((violation.confidence || 0) * 100).toFixed(0)}%
-                        </small>
-                      </td>
-                      <td>
-                        <Badge bg={getStatusColor(violation.status)} className="status-badge">
-                          {violation.status || 'Detected'}
-                        </Badge>
-                      </td>
-                      <td>
-                        <small>{formatDate(violation.timestamp || violation.createdAt)}</small>
-                      </td>
-                      <td>
-                        <small className="text-muted">{formatTime(violation.timestamp || violation.createdAt)}</small>
-                      </td>
-                      <td>
-                        <span className="fine-amount">
-                          ₹{(violation.fineAmount || 0).toLocaleString('en-IN')}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="action-buttons">
-                          <Button 
-                            variant="outline-primary" 
-                            size="sm"
-                            onClick={() => handleViewViolation(violation._id || violation.violationId)}
-                            className="action-btn me-1"
-                            title="View Details"
-                          >
-                            <FaEye />
-                          </Button>
-                          <Button 
-                            variant="outline-warning" 
-                            size="sm"
-                            onClick={() => handleEditViolation(violation._id || violation.violationId)}
-                            className="action-btn me-1"
-                            title="Edit"
-                          >
-                            <FaEdit />
-                          </Button>
-                          <Button 
-                            variant="outline-danger" 
-                            size="sm"
-                            onClick={() => handleDeleteViolation(violation._id || violation.violationId)}
-                            className="action-btn"
-                            title="Delete"
-                          >
-                            <FaTrash />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                {paginatedViolations.length > 0 ? (
+                  paginatedViolations.map((violation, index) => {
+                    const vid = violation._id || violation.violationId || `idx-${index}`;
+                    return (
+                      <tr key={vid}>
+                        <td>
+                          <small className="text-muted font-monospace">
+                            #{(vid).toString().slice(-6)}
+                          </small>
+                          {violation.isSaved && (
+                            <Badge bg="info" className="ms-1" style={{fontSize:'0.6rem'}}>SAVED</Badge>
+                          )}
+                        </td>
+                        <td>
+                          <Badge bg={getTypeBadge(violation.type)}>
+                            {formatViolationType(violation.type)}
+                          </Badge>
+                        </td>
+                        <td>
+                          <div className="fw-semibold">
+                            {violation.vehicleNumber || 'N/A'}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="d-flex align-items-center gap-2">
+                            <div className="progress flex-grow-1" style={{height:'6px', maxWidth:'60px'}}>
+                              <div 
+                                className={`progress-bar bg-${(violation.confidence||0.85)>0.8?'success':'warning'}`}
+                                style={{width:`${(violation.confidence||0.85)*100}%`}}
+                              />
+                            </div>
+                            <small>{Math.round((violation.confidence||0.85)*100)}%</small>
+                          </div>
+                        </td>
+                        <td>
+                          <Badge bg={getStatusColor(violation.status)}>
+                            {violation.status || 'Detected'}
+                          </Badge>
+                        </td>
+                        <td><small>{formatDate(violation.timestamp || violation.createdAt)}</small></td>
+                        <td><small className="text-muted">{formatTime(violation.timestamp || violation.createdAt)}</small></td>
+                        <td>
+                          <span className="fw-bold text-success">
+                            ₹{(violation.fineAmount || 0).toLocaleString('en-IN')}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="d-flex gap-1">
+                            <Button 
+                              variant="outline-primary" 
+                              size="sm"
+                              onClick={() => handleViewViolation(vid)}
+                              title="View Details"
+                            >
+                              <FaEye />
+                            </Button>
+                            <Button 
+                              variant="outline-warning" 
+                              size="sm"
+                              onClick={() => handleEditViolation(vid)}
+                              title="Edit"
+                            >
+                              <FaEdit />
+                            </Button>
+                            <Button 
+                              variant="outline-danger" 
+                              size="sm"
+                              onClick={() => handleDeleteViolation(vid)}
+                              title="Delete"
+                            >
+                              <FaTrash />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
-                    <td colSpan="9">
-                      <div className="empty-state">
-                        <FaInbox size={50} />
-                        <h5>No Violations Yet</h5>
+                    <td colSpan={9}>
+                      <div className="text-center py-5">
+                        <FaInbox size={50} className="text-muted" />
+                        <h5 className="mt-3">No Violations Yet</h5>
                         <p className="text-muted">Traffic violations will appear here once detected</p>
                         {userRole === 'admin' && (
-                          <Button 
-                            variant="primary" 
-                            size="sm"
-                            onClick={() => navigate('/upload')}
-                            className="mt-2"
-                          >
+                          <Button variant="primary" onClick={() => navigate('/upload')}>
                             <FaCloudUploadAlt className="me-2" />
                             Upload Media for Detection
                           </Button>
@@ -701,6 +748,31 @@ const Dashboard = () => {
               </tbody>
             </Table>
           </div>
+
+          {/* Pagination controls */}
+          {recentViolations.length > 0 && (
+            <div className="d-flex justify-content-between align-items-center p-3 border-top">
+              <Button 
+                variant="outline-secondary" 
+                size="sm"
+                onClick={handlePrevPage}
+                disabled={currentPage === 1}
+              >
+                <FaChevronLeft className="me-1" /> Previous
+              </Button>
+              <span className="text-muted">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button 
+                variant="outline-secondary" 
+                size="sm"
+                onClick={handleNextPage}
+                disabled={currentPage === totalPages}
+              >
+                Next <FaChevronRight className="ms-1" />
+              </Button>
+            </div>
+          )}
         </Card.Body>
       </Card>
     </div>
