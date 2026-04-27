@@ -42,7 +42,7 @@ import { uploadAPI, violationsAPI } from "../api/api";
 import "./UploadViolation.css";
 
 // Storage keys
-const SAVED_VIOLATIONS_KEY = 'traffic_saved_violations'; // Used by other components, kept for consistency
+ // Used by other components, kept for consistency
 const UPLOAD_STATE_KEY = 'traffic_upload_state';
 const PENDING_VIOLATIONS_KEY = 'traffic_pending_violations';
 
