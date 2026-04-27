@@ -33,7 +33,6 @@ import {
   FaNetworkWired,
   FaWifi
 } from "react-icons/fa";
-
 import { uploadAPI, violationsAPI } from "../api/api";
 import "./UploadViolation.css";
 

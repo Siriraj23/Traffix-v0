@@ -38,7 +38,7 @@ import {
   FaSync
 } from "react-icons/fa";
 
-import { uploadAPI, violationsAPI } from "../api/api";
+import { uploadAPI, violationsAPI, cctvAPI } from "../api/api";
 import "./UploadViolation.css";
 
 // Storage keys
@@ -70,11 +70,18 @@ const saveToStorage = (key, value) => {
 };
 
 // ==================== CCTV STREAM HOOK ====================
+// Replace the useCCTVStream hook completely with this one:
+
+// ==================== CCTV STREAM HOOK ====================
 const useCCTVStream = () => {
   const [streamId, setStreamId] = useState(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamPreview, setStreamPreview] = useState(null);
-  const [streamViolations, setStreamViolations] = useState({ no_helmet: 0, triple_riding: 0, overloading: 0 });
+  const [streamViolations, setStreamViolations] = useState({ 
+    no_helmet: 0, 
+    triple_riding: 0, 
+    overloading: 0 
+  });
   const [streamTotalFine, setStreamTotalFine] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [startTime, setStartTime] = useState(null);
@@ -86,8 +93,7 @@ const useCCTVStream = () => {
   const previewIntervalRef = useRef(null);
   const timerRef = useRef(null);
 
-  const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001';
-
+  // Use the imported cctvAPI directly - NO dynamic imports needed
   const startStream = useCallback(async (source, cameraName, maxDuration = 300) => {
     try {
       const id = `cctv_${Date.now()}`;
@@ -95,117 +101,141 @@ const useCCTVStream = () => {
       setActiveSource(source);
       setSelectedCamera(cameraName);
       
-      console.log(`🔌 Starting CCTV stream - ID: ${id}, Source: ${source}, Camera: ${cameraName}`);
+      console.log(`🔌 Starting CCTV - ID: ${id}, Source: ${source}, Camera: ${cameraName}`);
       
-      const response = await fetch(`${API_BASE}/cctv/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          stream_id: id, 
-          source: source,
-          max_duration: maxDuration 
-        })
-      });
+      // Use the imported cctvAPI directly
+      const result = await cctvAPI.startStream(id, source, maxDuration);
+      console.log('📡 CCTV start result:', result);
       
-      const data = await response.json();
-      console.log('📡 CCTV start response:', data);
-      
-      if (data.success) {
+      if (result.success && result.data?.success) {
         setStreamId(id);
         setIsStreaming(true);
         setStartTime(Date.now());
         setElapsedTime(0);
         return { success: true, streamId: id };
       } else {
-        return { success: false, error: data.message || 'Failed to start stream' };
+        const errorMsg = result.data?.message || result.error || 'Failed to start stream';
+        console.error('❌ CCTV start failed:', errorMsg);
+        return { success: false, error: errorMsg };
       }
     } catch (err) {
-      console.error('Start stream error:', err);
-      return { success: false, error: 'Cannot connect to AI server' };
+      console.error('❌ Start stream error:', err);
+      return { success: false, error: 'Cannot connect to AI server. Ensure detect.py is running on port 8000.' };
     }
-  }, [API_BASE]);
+  }, []);
 
   const stopStream = useCallback(async () => {
     if (!streamId) return null;
     
     try {
-      console.log(`🛑 Stopping CCTV stream: ${streamId}`);
-      const response = await fetch(`${API_BASE}/cctv/stop`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stream_id: streamId })
-      });
-      const data = await response.json();
+      console.log(`🛑 Stopping CCTV: ${streamId}`);
+      
+      // Use the imported cctvAPI directly
+      const result = await cctvAPI.stopStream(streamId);
       
       setIsStreaming(false);
       setStreamId(null);
       setStartTime(null);
       setActiveSource(null);
       setSelectedCamera(null);
+      setStreamPreview(null);
+      
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+      if (previewIntervalRef.current) {
+        clearInterval(previewIntervalRef.current);
+        previewIntervalRef.current = null;
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      
+      console.log('✅ CCTV stopped. Report:', result.data);
+      return result.data?.final_report || result.data;
+    } catch (err) {
+      console.error('❌ Stop stream error:', err);
+      setIsStreaming(false);
+      setStreamId(null);
+      setActiveSource(null);
+      setSelectedCamera(null);
+      setStreamPreview(null);
       
       if (pollingRef.current) clearInterval(pollingRef.current);
       if (previewIntervalRef.current) clearInterval(previewIntervalRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
       
-      return data.final_report || data;
-    } catch (err) {
-      console.error('Stop stream error:', err);
-      setIsStreaming(false);
-      setStreamId(null);
-      setActiveSource(null);
-      setSelectedCamera(null);
       return null;
     }
-  }, [streamId, API_BASE]);
+  }, [streamId]);
 
+  // Timer for auto-stop
   useEffect(() => {
     if (!isStreaming || !startTime) return;
+    
     timerRef.current = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       setElapsedTime(elapsed);
+      
       if (elapsed >= cctvDuration) {
-        console.log('⏰ Max duration reached, stopping stream');
+        console.log(`⏰ Duration reached (${cctvDuration}s), auto-stopping...`);
         stopStream();
       }
     }, 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, [isStreaming, startTime, cctvDuration, stopStream]);
 
+  // Poll violations and preview
   useEffect(() => {
     if (!isStreaming || !streamId) return;
 
-    pollingRef.current = setInterval(async () => {
+    const pollViolations = async () => {
       try {
-        const res = await fetch(`${API_BASE}/cctv/violations?stream_id=${streamId}`);
-        const data = await res.json();
-        if (data.stats) {
+        // Use the imported cctvAPI directly
+        const result = await cctvAPI.getViolations(streamId);
+        if (result.success && result.data?.stats) {
           setStreamViolations({
-            no_helmet: data.stats.violations?.no_helmet || 0,
-            triple_riding: data.stats.violations?.triple_riding || 0,
-            overloading: data.stats.violations?.overloading || 0
+            no_helmet: result.data.stats.violations?.no_helmet || 0,
+            triple_riding: result.data.stats.violations?.triple_riding || 0,
+            overloading: result.data.stats.violations?.overloading || 0
           });
-          setStreamTotalFine(data.total_fine || 0);
+          setStreamTotalFine(result.data.total_fine || 0);
         }
       } catch (err) {
         // Silent fail for polling
       }
-    }, 2000);
+    };
 
-    previewIntervalRef.current = setInterval(async () => {
+    const fetchPreview = async () => {
       try {
-        const res = await fetch(`${API_BASE}/cctv/preview?stream_id=${streamId}`);
-        const data = await res.json();
-        if (data.image) setStreamPreview(data.image);
+        // Use the imported cctvAPI directly
+        const result = await cctvAPI.getPreview(streamId);
+        if (result.success && result.data?.image) {
+          setStreamPreview(result.data.image);
+        }
       } catch (err) {
         // Silent fail for preview
       }
-    }, 1000);
+    };
+
+    // Initial fetch
+    pollViolations();
+    fetchPreview();
+    
+    // Set up polling intervals
+    pollingRef.current = setInterval(pollViolations, 2000);
+    previewIntervalRef.current = setInterval(fetchPreview, 1000);
 
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
       if (previewIntervalRef.current) clearInterval(previewIntervalRef.current);
     };
-  }, [isStreaming, streamId, API_BASE]);
+  }, [isStreaming, streamId]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -219,7 +249,6 @@ const useCCTVStream = () => {
     activeSource, selectedCamera, formatTime, startStream, stopStream
   };
 };
-
 // ==================== MAIN COMPONENT ====================
 const AuthorityUploadViolation = () => {
   // Load initial state from localStorage

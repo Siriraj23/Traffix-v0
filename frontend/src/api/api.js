@@ -10,6 +10,7 @@ const api = axios.create({
   },
 });
 
+// Request interceptor - Add token
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
@@ -21,6 +22,7 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Response interceptor - Handle auth errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -28,7 +30,9 @@ api.interceptors.response.use(
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       localStorage.removeItem('userRole');
-      window.location.href = '/login';
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -36,11 +40,10 @@ api.interceptors.response.use(
 
 // ==================== AUTH API ====================
 export const authAPI = {
-  // In the login function, update error handling:
-login: async (credentials) => {
+  login: async (credentials) => {
     try {
       const response = await api.post('/api/auth/login', credentials);
-      console.log('Login API Response:', response.data); // Debug log
+      console.log('Login API Response:', response.data);
       
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
@@ -49,7 +52,7 @@ login: async (credentials) => {
       }
       return { success: true, data: response.data };
     } catch (error) {
-      console.error('Login error details:', error.response?.data); // Debug log
+      console.error('Login error:', error.response?.data);
       return { 
         success: false, 
         error: error.response?.data?.detail || error.response?.data?.message || 'Login failed' 
@@ -62,7 +65,7 @@ login: async (credentials) => {
       const response = await api.post('/api/auth/register', userData);
       return { success: true, data: response.data };
     } catch (error) {
-      return { success: false, error: error.response?.data?.detail || error.response?.data?.message || 'Registration failed' };
+      return { success: false, error: error.response?.data?.detail || 'Registration failed' };
     }
   },
 
@@ -108,20 +111,11 @@ export const uploadAPI = {
       if (error.code === 'ECONNABORTED') {
         return { success: false, error: 'Request timed out.', timeout: true };
       } else if (error.response) {
-        return { success: false, error: error.response.data?.detail || 'Server error', status: error.response.status };
+        return { success: false, error: error.response.data?.detail || 'Server error' };
       } else if (error.request) {
-        return { success: false, error: 'Network error. Check if backend is running on port 5001.', networkError: true };
+        return { success: false, error: 'Network error. Check if backend is running on port 5001.' };
       }
       return { success: false, error: error.message || 'Failed to process request' };
-    }
-  },
-
-  getResults: async () => {
-    try {
-      const response = await api.get('/api/results');
-      return { success: true, data: response.data };
-    } catch (error) {
-      return { success: false, error: error.response?.data?.detail || error.message };
     }
   },
 
@@ -149,7 +143,7 @@ export const violationsAPI = {
   getAll: async (params = {}) => {
     try {
       const response = await api.get('/api/violations', { params });
-      return { success: true, violations: response.data.violations || response.data.data || response.data, data: response.data };
+      return { success: true, violations: response.data.violations || response.data.data || response.data };
     } catch (error) {
       return { success: false, error: error.response?.data?.detail || error.message };
     }
@@ -191,7 +185,6 @@ export const violationsAPI = {
     }
   },
 
-  // ===== PAYMENT API =====
   payFine: async (violationId, paymentData) => {
     try {
       const response = await api.post(`/api/violations/${violationId}/pay`, paymentData);
@@ -199,25 +192,92 @@ export const violationsAPI = {
     } catch (error) {
       return { success: false, error: error.response?.data?.detail || error.message };
     }
-  },
+  }
+};
 
-  // Simulate payment (for demo/local use)
-  simulatePayment: async (violationId) => {
+// ==================== CCTV API ====================
+export const cctvAPI = {
+  startStream: async (streamId, source, maxDuration = 300) => {
     try {
-      // Try API first
-      const response = await api.post(`/api/violations/${violationId}/pay`, {
-        paymentMethod: 'simulated',
-        transactionId: `TXN_${Date.now()}`,
-        amount: 0,
-        paidAt: new Date().toISOString()
+      console.log(`📡 Starting CCTV via API: ${streamId} -> ${source}`);
+      const response = await api.post('/api/cctv/start', {
+        stream_id: streamId,
+        source: String(source),
+        max_duration: maxDuration
       });
+      console.log('📡 CCTV start response:', response.data);
       return { success: true, data: response.data };
     } catch (error) {
-      // If API fails, handle locally
+      console.error('❌ CCTV start error:', error);
+      if (error.code === 'ECONNREFUSED' || error.response?.status === 503) {
+        return { 
+          success: false, 
+          error: 'AI Detection Service is not running. Please start the AI model on port 8000.',
+          serviceUnavailable: true
+        };
+      }
       return { 
-        success: true, 
-        local: true,
-        message: 'Payment processed locally'
+        success: false, 
+        error: error.response?.data?.error || error.response?.data?.message || error.message 
+      };
+    }
+  },
+
+  stopStream: async (streamId) => {
+    try {
+      console.log(`🛑 Stopping CCTV via API: ${streamId}`);
+      const response = await api.post('/api/cctv/stop', {
+        stream_id: streamId
+      });
+      console.log('🛑 CCTV stop response:', response.data);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('❌ CCTV stop error:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.error || error.message 
+      };
+    }
+  },
+
+  getStatus: async (streamId = null) => {
+    try {
+      const url = streamId 
+        ? `/api/cctv/status?stream_id=${streamId}`
+        : '/api/cctv/status';
+      const response = await api.get(url);
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { 
+        success: false, 
+        data: { active_streams: 0, streams: {} }
+      };
+    }
+  },
+
+  getViolations: async (streamId) => {
+    try {
+      const response = await api.get(`/api/cctv/violations?stream_id=${streamId}`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { 
+        success: false, 
+        data: { 
+          stats: { violations: { no_helmet: 0, triple_riding: 0, overloading: 0 } },
+          total_fine: 0 
+        }
+      };
+    }
+  },
+
+  getPreview: async (streamId) => {
+    try {
+      const response = await api.get(`/api/cctv/preview?stream_id=${streamId}`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      return { 
+        success: false, 
+        data: { image: null, message: 'No frame available' }
       };
     }
   }
@@ -230,26 +290,16 @@ export const dashboardAPI = {
       const response = await api.get('/api/dashboard/stats');
       return { success: true, data: response.data };
     } catch (error) {
-      console.error('Dashboard stats error:', error);
-      return { success: false, error: error.response?.data?.error || 'Failed to load dashboard data' };
+      return { success: false, error: 'Failed to load dashboard data' };
     }
   },
 
   getRecentViolations: async (limit = 10) => {
     try {
-      const response = await api.get('/api/dashboard/recent-violations', { params: { limit } });
+      const response = await api.get('/api/violations', { params: { limit } });
       return { success: true, data: response.data };
     } catch (error) {
-      return { success: false, error: error.response?.data?.detail || error.message };
-    }
-  },
-
-  getViolationTrends: async (period = 'weekly') => {
-    try {
-      const response = await api.get('/api/dashboard/violation-trends', { params: { period } });
-      return { success: true, data: response.data };
-    } catch (error) {
-      return { success: false, error: error.response?.data?.detail || error.message };
+      return { success: false, error: error.message };
     }
   }
 };
