@@ -46,6 +46,17 @@ const userSchema = new mongoose.Schema({
         default: ''
     },
     
+    // Authentication Provider
+    provider: {
+        type: String,
+        enum: ['email', 'google'],
+        default: 'email'
+    },
+    googleId: {
+        type: String,
+        default: null
+    },
+    
     // Verification Fields
     emailVerified: {
         type: Boolean,
@@ -102,7 +113,11 @@ userSchema.pre('save', async function(next) {
 
 // Compare password method
 userSchema.methods.comparePassword = async function(candidatePassword) {
-    return await bcrypt.compare(candidatePassword, this.password);
+    try {
+        return await bcrypt.compare(candidatePassword, this.password);
+    } catch (error) {
+        throw error;
+    }
 };
 
 // Check if OTP is valid
@@ -114,7 +129,7 @@ userSchema.methods.isOtpValid = function(enteredOtp) {
 };
 
 // Clear OTP after use
-userSchema.methods.clearOtp = function() {
+userSchema.methods.clearOtp = async function() {
     this.otp = null;
     this.otpExpiry = null;
     this.otpAttempts = 0;
@@ -141,6 +156,10 @@ userSchema.virtual('displayName').get(function() {
 userSchema.virtual('userType').get(function() {
     return this.role === 'admin' ? 'Authority' : 'Public User';
 });
+
+// Ensure virtuals are included in JSON output
+userSchema.set('toJSON', { virtuals: true });
+userSchema.set('toObject', { virtuals: true });
 
 // Indexes for better query performance
 userSchema.index({ email: 1 });

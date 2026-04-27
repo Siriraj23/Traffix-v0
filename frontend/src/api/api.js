@@ -36,9 +36,12 @@ api.interceptors.response.use(
 
 // ==================== AUTH API ====================
 export const authAPI = {
-  login: async (credentials) => {
+  // In the login function, update error handling:
+login: async (credentials) => {
     try {
       const response = await api.post('/api/auth/login', credentials);
+      console.log('Login API Response:', response.data); // Debug log
+      
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
@@ -46,7 +49,11 @@ export const authAPI = {
       }
       return { success: true, data: response.data };
     } catch (error) {
-      return { success: false, error: error.response?.data?.detail || error.response?.data?.message || 'Login failed' };
+      console.error('Login error details:', error.response?.data); // Debug log
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || error.response?.data?.message || 'Login failed' 
+      };
     }
   },
 
