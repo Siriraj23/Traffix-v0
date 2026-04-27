@@ -67,6 +67,7 @@ router.post('/detect', upload.single('video'), async (req, res) => {
                         violationId: `VIO-${Date.now()}-${count + 1}`,
                         type: item.violation || "Unknown",
                         plateNumber: item.plate || "N/A",
+                        vehicleNumber: item.plate || "N/A",  // Add vehicleNumber
                         vehicleType: item.vehicleType || 'car',
                         confidence: item.confidence || 0,
                         status: item.status || "pending",
@@ -115,7 +116,7 @@ router.post('/detect', upload.single('video'), async (req, res) => {
 ========================================================= */
 router.get('/', async (req, res) => {
     try {
-        const { type, status, startDate, endDate, page = 1, limit = 10 } = req.query;
+        const { type, status, startDate, endDate, page = 1, limit = 100 } = req.query;
 
         const currentUser = await getCurrentUser(req);
 
@@ -146,7 +147,7 @@ router.get('/', async (req, res) => {
             }
         }
 
-        const skip = (page - 1) * limit;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
 
         const violations = await Violation.find(query)
             .sort({ createdAt: -1 })
@@ -155,9 +156,12 @@ router.get('/', async (req, res) => {
 
         const total = await Violation.countDocuments(query);
 
+        console.log(`✅ Found ${violations.length} violations (Total: ${total})`);
+
         res.json({
             success: true,
-            violations,
+            violations: violations,
+            data: violations,  // For compatibility with frontend
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
@@ -174,16 +178,24 @@ router.get('/', async (req, res) => {
 });
 
 /* =========================================================
-   GET SINGLE VIOLATION
+   GET SINGLE VIOLATION (by MongoDB _id OR violationId)
 ========================================================= */
 router.get('/:id', async (req, res) => {
     try {
-        const violation = await Violation.findOne({
-            violationId: req.params.id
-        });
+        let violation;
+        
+        // Try to find by MongoDB _id first
+        if (req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+            violation = await Violation.findById(req.params.id);
+        }
+        
+        // If not found, try by violationId
+        if (!violation) {
+            violation = await Violation.findOne({ violationId: req.params.id });
+        }
 
         if (!violation) {
-            return res.status(404).json({ error: 'Violation not found' });
+            return res.status(404).json({ success: false, error: 'Violation not found' });
         }
 
         const currentUser = await getCurrentUser(req);
@@ -194,34 +206,80 @@ router.get('/:id', async (req, res) => {
             }
         }
 
-        res.json({ success: true, violation });
+        res.json({ success: true, data: violation, violation: violation });
 
     } catch (error) {
+        console.error('Error fetching violation:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
 /* =========================================================
-   CREATE VIOLATION (ADMIN ONLY)
+   CREATE VIOLATION (Admin only, but allow for manual uploads)
 ========================================================= */
 router.post('/', async (req, res) => {
     try {
+        console.log('📝 Creating violation with data:', req.body);
+        
         const currentUser = await getCurrentUser(req);
 
-        if (!currentUser || currentUser.role !== 'admin') {
-            return res.status(403).json({ error: 'Admin access required' });
+        // Allow creation if user is admin OR if it's a manual upload
+        // For manual uploads, we still want to save even without admin
+        const isManualUpload = req.body.source === 'manual_upload' || !currentUser;
+        
+        if (!isManualUpload && (!currentUser || currentUser.role !== 'admin')) {
+            return res.status(403).json({ success: false, error: 'Admin access required' });
         }
 
-        const data = req.body;
-        data.violationId = `VIO-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        const count = await Violation.countDocuments();
+        
+        const violationData = {
+            violationId: `VIO-${Date.now()}-${count + 1}`,
+            type: req.body.type,
+            confidence: req.body.confidence || 85,
+            description: req.body.description || `${req.body.type} violation detected`,
+            vehicleNumber: req.body.vehicleNumber || req.body.vehicleNumber || 'UNKNOWN',
+            vehicleType: req.body.vehicleType || 'unknown',
+            plateNumber: req.body.vehicleNumber || req.body.plateNumber || 'UNKNOWN',
+            status: req.body.status || 'detected',
+            fineAmount: req.body.fineAmount || (req.body.type === 'no_helmet' ? 1000 : req.body.type === 'triple_riding' ? 2000 : 5000),
+            timestamp: req.body.timestamp || new Date(),
+            location: req.body.location || { address: 'Manual Upload' },
+            severity: req.body.severity || 'medium',
+            source: req.body.source || 'manual_upload',
+            mediaType: req.body.mediaType || 'image',
+            details: {
+                ...req.body.details,
+                uploadedAt: new Date().toISOString(),
+                userAgent: req.headers['user-agent']
+            }
+        };
 
-        const violation = new Violation(data);
+        const violation = new Violation(violationData);
         await violation.save();
+        
+        console.log(`✅ Violation saved: ${violation._id} - ${violation.violationId}`);
 
-        res.status(201).json({ success: true, violation });
+        // Emit socket event if io is available
+        if (global.io) {
+            global.io.emit('new_violation', violation);
+            console.log('📢 Emitted new_violation event');
+        }
+
+        res.status(201).json({ 
+            success: true, 
+            data: violation,
+            violation: violation,
+            message: 'Violation created successfully'
+        });
 
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('❌ Error creating violation:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            details: error.errors 
+        });
     }
 });
 
@@ -236,20 +294,138 @@ router.put('/:id', async (req, res) => {
             return res.status(403).json({ error: 'Admin access required' });
         }
 
-        const violation = await Violation.findOne({
-            violationId: req.params.id
-        });
+        let violation;
+        
+        // Try to find by MongoDB _id first
+        if (req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+            violation = await Violation.findById(req.params.id);
+        }
+        
+        // If not found, try by violationId
+        if (!violation) {
+            violation = await Violation.findOne({ violationId: req.params.id });
+        }
 
         if (!violation) {
             return res.status(404).json({ error: 'Violation not found' });
         }
 
         Object.assign(violation, req.body);
+        violation.updatedAt = new Date();
         await violation.save();
 
-        res.json({ success: true, violation });
+        console.log(`✅ Violation updated: ${violation._id}`);
+        res.json({ success: true, data: violation, violation: violation });
 
     } catch (error) {
+        console.error('Error updating violation:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/* =========================================================
+   DELETE VIOLATION (ADMIN ONLY)
+========================================================= */
+router.delete('/:id', async (req, res) => {
+    try {
+        const currentUser = await getCurrentUser(req);
+
+        if (!currentUser || currentUser.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        let violation;
+        
+        // Try to find by MongoDB _id first
+        if (req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+            violation = await Violation.findByIdAndDelete(req.params.id);
+        }
+        
+        // If not found, try by violationId
+        if (!violation) {
+            violation = await Violation.findOneAndDelete({ violationId: req.params.id });
+        }
+
+        if (!violation) {
+            return res.status(404).json({ error: 'Violation not found' });
+        }
+
+        console.log(`✅ Violation deleted: ${req.params.id}`);
+        res.json({ success: true, message: 'Violation deleted successfully' });
+
+    } catch (error) {
+        console.error('Error deleting violation:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/* =========================================================
+   GET VIOLATION STATS
+========================================================= */
+router.get('/stats/all', async (req, res) => {
+    try {
+        const total = await Violation.countDocuments();
+        const byType = await Violation.aggregate([
+            { $group: { _id: '$type', count: { $sum: 1 } } }
+        ]);
+        const totalFine = await Violation.aggregate([
+            { $group: { _id: null, total: { $sum: '$fineAmount' } } }
+        ]);
+        const byStatus = await Violation.aggregate([
+            { $group: { _id: '$status', count: { $sum: 1 } } }
+        ]);
+
+        res.json({
+            success: true,
+            data: {
+                total,
+                byType,
+                byStatus,
+                totalFine: totalFine[0]?.total || 0
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching stats:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/* =========================================================
+   PAYMENT ENDPOINT
+========================================================= */
+router.post('/:id/pay', async (req, res) => {
+    try {
+        let violation;
+        
+        // Try to find by MongoDB _id first
+        if (req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+            violation = await Violation.findById(req.params.id);
+        }
+        
+        // If not found, try by violationId
+        if (!violation) {
+            violation = await Violation.findOne({ violationId: req.params.id });
+        }
+
+        if (!violation) {
+            return res.status(404).json({ success: false, error: 'Violation not found' });
+        }
+
+        violation.status = 'paid';
+        violation.paidAt = new Date();
+        violation.paymentDetails = {
+            transactionId: req.body.transactionId || `TXN_${Date.now()}`,
+            paymentMethod: req.body.paymentMethod || 'online',
+            paidAmount: violation.fineAmount,
+            paidAt: new Date()
+        };
+        await violation.save();
+
+        console.log(`💰 Violation paid: ${violation._id}`);
+        res.json({ success: true, data: violation });
+
+    } catch (error) {
+        console.error('Error processing payment:', error);
         res.status(500).json({ error: error.message });
     }
 });

@@ -34,14 +34,17 @@ import {
   FaCheckCircle,
   FaClipboardList,
   FaMoneyBillWave,
-  FaInfoCircle
+  FaInfoCircle,
+  FaSync
 } from "react-icons/fa";
 
 import { uploadAPI, violationsAPI } from "../api/api";
 import "./UploadViolation.css";
 
 // Storage keys
-const SAVED_VIOLATIONS_KEY = 'traffic_saved_violations';
+const SAVED_VIOLATIONS_KEY = 'traffic_saved_violations'; // Used by other components, kept for consistency
+const UPLOAD_STATE_KEY = 'traffic_upload_state';
+const PENDING_VIOLATIONS_KEY = 'traffic_pending_violations';
 
 const loadFromStorage = (key, defaultValue = null) => {
   try {
@@ -83,7 +86,9 @@ const useCCTVStream = () => {
   const previewIntervalRef = useRef(null);
   const timerRef = useRef(null);
 
-  const startStream = async (source, cameraName, maxDuration = 300) => {
+  const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5001';
+
+  const startStream = useCallback(async (source, cameraName, maxDuration = 300) => {
     try {
       const id = `cctv_${Date.now()}`;
       setCctvDuration(maxDuration);
@@ -92,7 +97,7 @@ const useCCTVStream = () => {
       
       console.log(`🔌 Starting CCTV stream - ID: ${id}, Source: ${source}, Camera: ${cameraName}`);
       
-      const response = await fetch('http://localhost:8000/cctv/start', {
+      const response = await fetch(`${API_BASE}/cctv/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -116,16 +121,16 @@ const useCCTVStream = () => {
       }
     } catch (err) {
       console.error('Start stream error:', err);
-      return { success: false, error: 'Cannot connect to AI server on port 8000' };
+      return { success: false, error: 'Cannot connect to AI server' };
     }
-  };
+  }, [API_BASE]);
 
   const stopStream = useCallback(async () => {
     if (!streamId) return null;
     
     try {
       console.log(`🛑 Stopping CCTV stream: ${streamId}`);
-      const response = await fetch('http://localhost:8000/cctv/stop', {
+      const response = await fetch(`${API_BASE}/cctv/stop`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stream_id: streamId })
@@ -151,7 +156,7 @@ const useCCTVStream = () => {
       setSelectedCamera(null);
       return null;
     }
-  }, [streamId]);
+  }, [streamId, API_BASE]);
 
   useEffect(() => {
     if (!isStreaming || !startTime) return;
@@ -171,7 +176,7 @@ const useCCTVStream = () => {
 
     pollingRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`http://localhost:8000/cctv/violations?stream_id=${streamId}`);
+        const res = await fetch(`${API_BASE}/cctv/violations?stream_id=${streamId}`);
         const data = await res.json();
         if (data.stats) {
           setStreamViolations({
@@ -188,7 +193,7 @@ const useCCTVStream = () => {
 
     previewIntervalRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`http://localhost:8000/cctv/preview?stream_id=${streamId}`);
+        const res = await fetch(`${API_BASE}/cctv/preview?stream_id=${streamId}`);
         const data = await res.json();
         if (data.image) setStreamPreview(data.image);
       } catch (err) {
@@ -200,7 +205,7 @@ const useCCTVStream = () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
       if (previewIntervalRef.current) clearInterval(previewIntervalRef.current);
     };
-  }, [isStreaming, streamId]);
+  }, [isStreaming, streamId, API_BASE]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -217,21 +222,40 @@ const useCCTVStream = () => {
 
 // ==================== MAIN COMPONENT ====================
 const AuthorityUploadViolation = () => {
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null);
+  // Load initial state from localStorage
+  const savedState = loadFromStorage(UPLOAD_STATE_KEY, null);
+  
+  const [file, setFile] = useState(savedState?.fileData ? (() => {
+    // Reconstruct file from saved data
+    if (savedState.fileData && savedState.fileName) {
+      const byteCharacters = atob(savedState.fileData.split(',')[1]);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: savedState.fileType });
+      return new File([blob], savedState.fileName, { type: savedState.fileType });
+    }
+    return null;
+  })() : null);
+  
+  const [preview, setPreview] = useState(savedState?.preview || null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [detectedPlates, setDetectedPlates] = useState([]);
-  const [violations, setViolations] = useState([]);
-  const [plateConfirmed, setPlateConfirmed] = useState(false);
-  const [editedPlateNumber, setEditedPlateNumber] = useState("");
-  const [vehicleInfo, setVehicleInfo] = useState(null);
-  const [processingTime, setProcessingTime] = useState(null);
-  const [detectionMessages, setDetectionMessages] = useState([]);
-  const [annotatedImage, setAnnotatedImage] = useState(null);
-  const [mediaType, setMediaType] = useState(null);
+  const [detectedPlates, setDetectedPlates] = useState(savedState?.detectedPlates || []);
+  const [violations, setViolations] = useState(savedState?.violations || []);
+  const [plateConfirmed, setPlateConfirmed] = useState(savedState?.plateConfirmed || false);
+  const [editedPlateNumber, setEditedPlateNumber] = useState(savedState?.editedPlateNumber || "");
+  const [vehicleInfo, setVehicleInfo] = useState(savedState?.vehicleInfo || null);
+  const [processingTime, setProcessingTime] = useState(savedState?.processingTime || null);
+  const [detectionMessages, setDetectionMessages] = useState(savedState?.detectionMessages || []);
+  const [annotatedImage, setAnnotatedImage] = useState(savedState?.annotatedImage || null);
+  const [mediaType, setMediaType] = useState(savedState?.mediaType || null);
+  const [syncingPending, setSyncingPending] = useState(false);
+  const [pendingViolations, setPendingViolations] = useState([]);
   
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState("");
@@ -259,6 +283,138 @@ const AuthorityUploadViolation = () => {
     streamViolations, streamTotalFine, elapsedTime, cctvDuration: streamDuration,
     activeSource, selectedCamera: cctvCamera, formatTime, startStream, stopStream
   } = useCCTVStream();
+
+  // Load pending violations on mount
+  useEffect(() => {
+    const pending = loadFromStorage(PENDING_VIOLATIONS_KEY, []);
+    setPendingViolations(pending);
+  }, []);
+
+  // Save state to localStorage whenever relevant data changes
+  const saveCurrentState = useCallback(() => {
+    const stateToSave = {
+      fileName: file?.name || null,
+      fileType: file?.type || null,
+      fileData: savedState?.fileData || null,
+      preview: preview,
+      detectedPlates: detectedPlates,
+      violations: violations,
+      plateConfirmed: plateConfirmed,
+      editedPlateNumber: editedPlateNumber,
+      vehicleInfo: vehicleInfo,
+      processingTime: processingTime,
+      detectionMessages: detectionMessages,
+      annotatedImage: annotatedImage,
+      mediaType: mediaType,
+      savedAt: new Date().toISOString()
+    };
+    
+    saveToStorage(UPLOAD_STATE_KEY, stateToSave);
+  }, [file, preview, detectedPlates, violations, plateConfirmed, editedPlateNumber, vehicleInfo, processingTime, detectionMessages, annotatedImage, mediaType, savedState]);
+
+  // Save state on every relevant change
+  useEffect(() => {
+    if (!loading) {
+      saveCurrentState();
+    }
+  }, [saveCurrentState, loading]);
+
+  // Store file as base64 when file is first set
+  useEffect(() => {
+    if (file && !savedState?.fileData) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const stateToSave = {
+          fileName: file.name,
+          fileType: file.type,
+          fileData: reader.result,
+          preview: preview,
+          detectedPlates: detectedPlates,
+          violations: violations,
+          plateConfirmed: plateConfirmed,
+          editedPlateNumber: editedPlateNumber,
+          vehicleInfo: vehicleInfo,
+          processingTime: processingTime,
+          detectionMessages: detectionMessages,
+          annotatedImage: annotatedImage,
+          mediaType: mediaType,
+          savedAt: new Date().toISOString()
+        };
+        saveToStorage(UPLOAD_STATE_KEY, stateToSave);
+      };
+      reader.readAsDataURL(file);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file]);
+
+  // Load violations from backend
+  const loadViolationsFromBackend = useCallback(async () => {
+    try {
+      const result = await violationsAPI.getAll();
+      if (result.success && result.violations) {
+        console.log(`📋 Loaded ${result.violations.length} violations from backend`);
+      }
+    } catch (err) {
+      console.error('Failed to load violations from backend:', err);
+    }
+  }, []);
+
+  // Sync pending violations with backend
+  const syncPendingViolations = useCallback(async () => {
+    const pending = loadFromStorage(PENDING_VIOLATIONS_KEY, []);
+    if (pending.length === 0) return;
+    
+    setSyncingPending(true);
+    console.log(`🔄 Syncing ${pending.length} pending violations...`);
+    
+    const syncedViolations = [];
+    const failedViolations = [];
+    
+    for (const violation of pending) {
+      // Remove local fields before sending
+      const { localId, createdAt: pendingCreatedAt, ...cleanViolation } = violation;
+      
+      try {
+        const result = await violationsAPI.create(cleanViolation);
+        if (result.success) {
+          syncedViolations.push(violation);
+          console.log(`✅ Synced violation: ${violation.type} for ${violation.vehicleNumber}`);
+        } else {
+          failedViolations.push(violation);
+          console.error(`❌ Failed to sync violation: ${result.error}`);
+        }
+      } catch (err) {
+        failedViolations.push(violation);
+        console.error(`❌ Sync error: ${err.message}`);
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    if (failedViolations.length > 0) {
+      saveToStorage(PENDING_VIOLATIONS_KEY, failedViolations);
+      setPendingViolations(failedViolations);
+    } else {
+      saveToStorage(PENDING_VIOLATIONS_KEY, []);
+      setPendingViolations([]);
+    }
+    
+    if (syncedViolations.length > 0) {
+      setSuccess(`✅ Synced ${syncedViolations.length} violation(s) to backend!`);
+      await loadViolationsFromBackend();
+      window.dispatchEvent(new CustomEvent('violationsUpdated'));
+      setTimeout(() => setSuccess(""), 3000);
+    }
+    
+    setSyncingPending(false);
+  }, [loadViolationsFromBackend]);
+
+  // Auto-sync on mount and periodically
+  useEffect(() => {
+    syncPendingViolations();
+    const interval = setInterval(syncPendingViolations, 30000);
+    return () => clearInterval(interval);
+  }, [syncPendingViolations]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -393,19 +549,31 @@ const AuthorityUploadViolation = () => {
     const violationsList = [];
     
     (violationsData.no_helmet || []).forEach(v => violationsList.push({
-      type: 'no_helmet', confidence: v.confidence || 0.85,
+      type: 'no_helmet', 
+      confidence: v.confidence || 0.85,
       description: v.message || 'Rider without helmet detected',
-      fine_amount: v.fine_amount || 1000, confirmed: false, saved: false, severity: 'high'
+      fine_amount: v.fine_amount || 1000, 
+      confirmed: false, 
+      saved: false, 
+      severity: 'high'
     }));
     (violationsData.triple_riding || []).forEach(v => violationsList.push({
-      type: 'triple_riding', confidence: v.confidence || 0.85,
+      type: 'triple_riding', 
+      confidence: v.confidence || 0.85,
       description: v.message || 'Three persons on two-wheeler',
-      fine_amount: v.fine_amount || 2000, confirmed: false, saved: false, severity: 'high'
+      fine_amount: v.fine_amount || 2000, 
+      confirmed: false, 
+      saved: false, 
+      severity: 'high'
     }));
     (violationsData.overloading || []).forEach(v => violationsList.push({
-      type: 'overloading', confidence: v.confidence || 0.80,
+      type: 'overloading', 
+      confidence: v.confidence || 0.80,
       description: v.message || 'Vehicle carrying excess passengers',
-      fine_amount: v.fine_amount || 5000, confirmed: false, saved: false, severity: 'medium'
+      fine_amount: v.fine_amount || 5000, 
+      confirmed: false, 
+      saved: false, 
+      severity: 'medium'
     }));
     
     setViolations(violationsList);
@@ -487,16 +655,27 @@ const AuthorityUploadViolation = () => {
     const blob = await captureLiveFrame();
     if (!blob) { setCameraError("Cannot capture."); return; }
     const tempFile = new File([blob], `capture-${Date.now()}.jpg`, { type: "image/jpeg" });
-    setFile(tempFile); setPreview(URL.createObjectURL(tempFile));
-    const formData = new FormData(); formData.append("file", tempFile);
-    setError(""); setSuccess(""); setLoading(true); setProgress(10);
+    setFile(tempFile); 
+    setPreview(URL.createObjectURL(tempFile));
+    const formData = new FormData(); 
+    formData.append("file", tempFile);
+    setError(""); 
+    setSuccess(""); 
+    setLoading(true); 
+    setProgress(10);
     try {
       const response = await uploadAPI.uploadMedia(formData);
       setProgress(100);
-      if (!response.success) { setError(response.error || "Failed."); return; }
+      if (!response.success) { 
+        setError(response.error || "Failed."); 
+        return; 
+      }
       processDetectionResponse(response);
-    } catch (err) { setError("Connection failed."); }
-    finally { setLoading(false); }
+    } catch (err) { 
+      setError("Connection failed."); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   // ===== CCTV =====
@@ -601,176 +780,208 @@ const AuthorityUploadViolation = () => {
   const handleUpload = async () => {
     if (!file) { setError("Attach a file."); return; }
     resetState();
-    const formData = new FormData(); formData.append("file", file);
+    const formData = new FormData(); 
+    formData.append("file", file);
     const isVideo = file.type.startsWith('video/');
     try {
-      setLoading(true); setProgress(5);
+      setLoading(true); 
+      setProgress(5);
       if (isVideo) setSuccess("⏳ Processing video...");
       progressIntervalRef.current = setInterval(() => {
         setProgress(c => c < 30 ? c + 1 : c < 60 ? c + 0.5 : c < 85 ? c + 0.2 : c);
       }, isVideo ? 2000 : 220);
       const response = await uploadAPI.uploadMedia(formData);
-      clearInterval(progressIntervalRef.current); setProgress(100);
-      if (!response.success) { setError(response.error || "Failed."); return; }
+      clearInterval(progressIntervalRef.current); 
+      setProgress(100);
+      if (!response.success) { 
+        setError(response.error || "Failed."); 
+        return; 
+      }
       processDetectionResponse(response);
     } catch (err) {
       clearInterval(progressIntervalRef.current);
       setError("Connection failed. Check if backend is running.");
-    } finally { setLoading(false); }
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const clearFile = () => {
-    setFile(null); setPreview(null); resetState();
+    setFile(null); 
+    setPreview(null); 
+    resetState();
     if (fileInputRef.current) fileInputRef.current.value = "";
+    saveToStorage(UPLOAD_STATE_KEY, null);
   };
 
-  // ===== VIOLATION ACTIONS WITH LOCAL STORAGE SAVE =====
+  // ===== VIOLATION ACTIONS WITH BACKEND SAVE =====
   const toggleConfirm = (i) => setViolations(prev => prev.map((v, idx) => idx === i ? { ...v, confirmed: !v.confirmed } : v));
 
   const saveViolation = async (i) => {
     const v = violations[i];
-    if (!v.confirmed) { setError("Please confirm the violation first."); return; }
+    if (!v.confirmed) { 
+      setError("Please confirm the violation first."); 
+      return; 
+    }
     
     const vehicleNum = plateConfirmed ? editedPlateNumber : (detectedPlates[0]?.number || 'UNKNOWN');
     
+    setLoading(true);
+    
+    // Send confidence as decimal (0-1) and remove source field
+    const violationData = {
+      type: v.type,
+      confidence: v.confidence, // Send as decimal (e.g., 0.85) not percentage
+      description: v.description,
+      vehicleNumber: vehicleNum,
+      status: "detected",
+      fineAmount: v.fine_amount,
+      timestamp: new Date().toISOString(),
+      severity: v.severity,
+      mediaType: mediaType || (file?.type?.startsWith('video/') ? 'video' : 'image')
+      // REMOVED: source field - let the model use default
+    };
+    
+    console.log('💾 Saving violation to backend:', violationData);
+    
     try {
-      // Try API save
-      let apiResponse = null;
-      try {
-        apiResponse = await violationsAPI.create({
-          type: v.type, confidence: v.confidence, description: v.description,
-          vehicleNumber: vehicleNum, status: "detected",
-          fineAmount: v.fine_amount || 1000,
-          timestamp: new Date().toISOString(), severity: v.severity || 'medium'
-        });
-      } catch (apiErr) {
-        console.warn('API save failed, saving locally:', apiErr.message);
-      }
+      const result = await violationsAPI.create(violationData);
       
-      // Create saved violation object
-      const savedViolation = {
-        _id: apiResponse?.data?._id || `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        violationId: apiResponse?.data?.violationId || `LOC-${Date.now()}`,
-        type: v.type,
-        confidence: v.confidence,
-        description: v.description,
-        vehicleNumber: vehicleNum,
-        status: 'detected',
-        fineAmount: v.fine_amount || 1000,
-        fine: v.fine_amount || 1000,
-        timestamp: new Date().toISOString(),
-        savedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        severity: v.severity || 'medium',
-        saved: true,
-        confirmed: true,
-        isSaved: true,
-        source: 'manual_upload'
-      };
-      
-      // Update violations list
-      setViolations(prev => prev.map((item, idx) => idx === i ? { ...item, saved: true, confirmed: true } : item));
-      
-      // SAVE TO LOCAL STORAGE
-      const existingSaved = loadFromStorage(SAVED_VIOLATIONS_KEY, []);
-      
-      // Check for duplicates
-      const isDuplicate = existingSaved.some(sv => 
-        sv.vehicleNumber === vehicleNum && sv.type === v.type &&
-        Math.abs(new Date(sv.savedAt) - new Date(savedViolation.savedAt)) < 5000
-      );
-      
-      if (!isDuplicate) {
-        existingSaved.push(savedViolation);
-        saveToStorage(SAVED_VIOLATIONS_KEY, existingSaved);
+      if (result.success) {
+        console.log('✅ Violation saved to backend:', result.data);
         
-        // DISPATCH EVENT SO OTHER PAGES REFRESH
+        setViolations(prev => prev.map((item, idx) => 
+          idx === i ? { ...item, saved: true, confirmed: true, backendId: result.data?._id } : item
+        ));
+        
+        setSuccess(`✅ Violation saved: ${v.type.replace(/_/g, ' ')} for ${vehicleNum}`);
+        
         window.dispatchEvent(new CustomEvent('violationSaved', { 
-          detail: { violation: savedViolation }
+          detail: { violation: violationData, backendId: result.data?._id }
         }));
         window.dispatchEvent(new CustomEvent('violationsUpdated'));
         
-        setSuccess(`✅ Violation saved: ${v.type.replace(/_/g, ' ')} for ${vehicleNum}`);
+        setTimeout(() => setSuccess(""), 3000);
       } else {
-        setError("This violation was already saved.");
+        console.warn('Backend save failed, adding to pending queue:', result.error);
+        
+        const pendingViolation = {
+          ...violationData,
+          localId: `pending_${Date.now()}_${i}`,
+          createdAt: new Date().toISOString()
+        };
+        
+        const existingPending = loadFromStorage(PENDING_VIOLATIONS_KEY, []);
+        existingPending.push(pendingViolation);
+        saveToStorage(PENDING_VIOLATIONS_KEY, existingPending);
+        setPendingViolations(existingPending);
+        
+        setViolations(prev => prev.map((item, idx) => 
+          idx === i ? { ...item, saved: true, confirmed: true, pending: true } : item
+        ));
+        
+        setSuccess(`⚠️ Violation saved locally (will sync when backend available): ${v.type.replace(/_/g, ' ')} for ${vehicleNum}`);
       }
     } catch (err) {
       console.error('Save error:', err);
-      setError("Cannot save violation.");
+      setError("Failed to save violation: " + (err.message || "Unknown error"));
+    } finally {
+      setLoading(false);
     }
   };
 
   const saveAllViolations = async () => {
     const toSave = violations.filter(v => v.confirmed && !v.saved);
-    if (!toSave.length) { setError("Please confirm violations first before saving."); return; }
+    if (!toSave.length) { 
+      setError("Please confirm violations first before saving."); 
+      return; 
+    }
     
     setLoading(true);
     let savedCount = 0;
+    let pendingCount = 0;
     const vehicleNum = plateConfirmed ? editedPlateNumber : (detectedPlates[0]?.number || 'UNKNOWN');
-    const newSavedViolations = [];
+    const newPendingViolations = [];
     
-    for (const v of toSave) {
+    for (let idx = 0; idx < toSave.length; idx++) {
+      const v = toSave[idx];
+      const originalIndex = violations.findIndex(vi => vi === v);
+      
+      // Send confidence as decimal (0-1) and remove source field
+      const violationData = {
+        type: v.type,
+        confidence: v.confidence, // Send as decimal (e.g., 0.85) not percentage
+        description: v.description,
+        vehicleNumber: vehicleNum,
+        status: "detected",
+        fineAmount: v.fine_amount,
+        timestamp: new Date().toISOString(),
+        severity: v.severity,
+        mediaType: mediaType || (file?.type?.startsWith('video/') ? 'video' : 'image')
+        // REMOVED: source field - let the model use default
+      };
+      
       try {
-        let apiResponse = null;
-        try {
-          apiResponse = await violationsAPI.create({
-            type: v.type, confidence: v.confidence, description: v.description,
-            vehicleNumber: vehicleNum, status: "detected",
-            fineAmount: v.fine_amount || 1000,
-            timestamp: new Date().toISOString(), severity: v.severity || 'medium'
+        const result = await violationsAPI.create(violationData);
+        
+        if (result.success) {
+          savedCount++;
+          setViolations(prev => prev.map((item, i) => 
+            i === originalIndex ? { ...item, saved: true, confirmed: true, backendId: result.data?._id } : item
+          ));
+        } else {
+          pendingCount++;
+          newPendingViolations.push({
+            ...violationData,
+            localId: `pending_${Date.now()}_${idx}`,
+            createdAt: new Date().toISOString()
           });
-        } catch (apiErr) {}
-        
-        const savedViolation = {
-          _id: apiResponse?.data?._id || `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${savedCount}`,
-          violationId: apiResponse?.data?.violationId || `LOC-${Date.now()}_${savedCount}`,
-          type: v.type, confidence: v.confidence, description: v.description,
-          vehicleNumber: vehicleNum, status: 'detected',
-          fineAmount: v.fine_amount || 1000, fine: v.fine_amount || 1000,
-          timestamp: new Date().toISOString(), savedAt: new Date().toISOString(),
-          createdAt: new Date().toISOString(), severity: v.severity || 'medium',
-          saved: true, confirmed: true, isSaved: true, source: 'manual_upload'
-        };
-        
-        savedCount++;
-        newSavedViolations.push(savedViolation);
+          setViolations(prev => prev.map((item, i) => 
+            i === originalIndex ? { ...item, saved: true, confirmed: true, pending: true } : item
+          ));
+        }
       } catch (err) {
-        console.error('Error saving violation:', err);
+        pendingCount++;
+        newPendingViolations.push({
+          ...violationData,
+          localId: `pending_${Date.now()}_${idx}`,
+          createdAt: new Date().toISOString()
+        });
+        setViolations(prev => prev.map((item, i) => 
+          i === originalIndex ? { ...item, saved: true, confirmed: true, pending: true } : item
+        ));
       }
+      
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    if (newPendingViolations.length > 0) {
+      const existingPending = loadFromStorage(PENDING_VIOLATIONS_KEY, []);
+      saveToStorage(PENDING_VIOLATIONS_KEY, [...existingPending, ...newPendingViolations]);
+      setPendingViolations([...existingPending, ...newPendingViolations]);
     }
     
     setLoading(false);
     
     if (savedCount > 0) {
-      setViolations(prev => prev.map(v => v.confirmed && !v.saved ? { ...v, saved: true, confirmed: true } : v));
-      
-      // SAVE ALL TO LOCAL STORAGE
-      const existingSaved = loadFromStorage(SAVED_VIOLATIONS_KEY, []);
-      newSavedViolations.forEach(sv => {
-        const isDuplicate = existingSaved.some(esv => 
-          esv.vehicleNumber === vehicleNum && esv.type === sv.type &&
-          Math.abs(new Date(esv.savedAt) - new Date(sv.savedAt)) < 10000
-        );
-        if (!isDuplicate) existingSaved.push(sv);
-      });
-      saveToStorage(SAVED_VIOLATIONS_KEY, existingSaved);
-      
-      // DISPATCH EVENTS
-      window.dispatchEvent(new CustomEvent('violationsBatchSaved', { 
-        detail: { savedCount, vehicleNumber: vehicleNum, savedViolations: newSavedViolations }
-      }));
-      window.dispatchEvent(new CustomEvent('violationsUpdated'));
-      
-      setSuccess(`✅ ${savedCount} violation(s) saved successfully!`);
-    } else {
-      setError("Failed to save violations.");
+      setSuccess(`✅ ${savedCount} violation(s) saved to backend!${pendingCount > 0 ? ` ⚠️ ${pendingCount} saved locally (will sync later)` : ''}`);
+    } else if (pendingCount > 0) {
+      setSuccess(`⚠️ ${pendingCount} violation(s) saved locally (will sync when backend is available)`);
     }
+    
+    window.dispatchEvent(new CustomEvent('violationsBatchSaved', { 
+      detail: { savedCount, pendingCount, vehicleNumber: vehicleNum }
+    }));
+    window.dispatchEvent(new CustomEvent('violationsUpdated'));
+    
+    setTimeout(() => setSuccess(""), 4000);
   };
 
   const fileTypeLabel = file?.type?.startsWith("video/") ? "video" : "image";
   const confirmedCount = violations.filter(v => v.confirmed).length;
   const savedCount = violations.filter(v => v.saved).length;
   const totalFine = violations.reduce((s, v) => s + (v.fine_amount || 0), 0);
+  const pendingSyncCount = pendingViolations.length;
 
   // ==================== RENDER ====================
   return (
@@ -783,9 +994,23 @@ const AuthorityUploadViolation = () => {
               <h1 className="page-title"><FaShieldAlt className="me-2" />Traffic Violation Detection</h1>
               <p className="page-subtitle">Upload evidence or connect CCTV cameras for AI-powered detection</p>
             </div>
-            <Badge className="authority-badge mt-2 mt-md-0" bg="dark">
-              <FaShieldAlt className="me-1" /> Authority Portal
-            </Badge>
+            <div className="d-flex gap-2 mt-2 mt-md-0">
+              {pendingSyncCount > 0 && (
+                <Button 
+                  variant="warning" 
+                  size="sm" 
+                  onClick={syncPendingViolations}
+                  disabled={syncingPending}
+                  className="d-flex align-items-center gap-1"
+                >
+                  {syncingPending ? <Spinner size="sm" /> : <FaSync />}
+                  <span>Sync ({pendingSyncCount})</span>
+                </Button>
+              )}
+              <Badge className="authority-badge" bg="dark">
+                <FaShieldAlt className="me-1" /> Authority Portal
+              </Badge>
+            </div>
           </div>
         </div>
 
@@ -987,6 +1212,7 @@ const AuthorityUploadViolation = () => {
                 <div className="d-flex gap-2 mb-3">
                   <Badge bg="success">✓ {confirmedCount} Confirmed</Badge>
                   <Badge bg="info">💾 {savedCount} Saved</Badge>
+                  {pendingSyncCount > 0 && <Badge bg="warning">⏳ {pendingSyncCount} Pending Sync</Badge>}
                 </div>
                 {vehicleInfo && (
                   <div className="mb-3">
@@ -1050,7 +1276,7 @@ const AuthorityUploadViolation = () => {
                 ) : (
                   <div>
                     {violations.map((v, i) => (
-                      <div key={i} className={`p-3 mb-2 rounded border ${v.confirmed ? 'border-success bg-success bg-opacity-10' : ''} ${v.saved ? 'border-info bg-info bg-opacity-10' : ''}`}>
+                      <div key={i} className={`p-3 mb-2 rounded border ${v.confirmed ? 'border-success bg-success bg-opacity-10' : ''} ${v.saved ? 'border-info bg-info bg-opacity-10' : ''} ${v.pending ? 'border-warning bg-warning bg-opacity-10' : ''}`}>
                         <div className="d-flex justify-content-between align-items-start mb-2">
                           <h6 className="mb-0">
                             {v.type === 'no_helmet' ? '🪖 No Helmet' : v.type === 'triple_riding' ? '🏍️ Triple Riding' : '🚛 Overloading'}
@@ -1058,7 +1284,8 @@ const AuthorityUploadViolation = () => {
                           <div className="d-flex gap-1">
                             <Badge bg={v.severity === 'high' ? 'danger' : 'warning'}>{v.severity?.toUpperCase()}</Badge>
                             {v.confirmed && <Badge bg="success"><FaCheck /></Badge>}
-                            {v.saved && <Badge bg="info"><FaSave /></Badge>}
+                            {v.saved && !v.pending && <Badge bg="info"><FaSave /></Badge>}
+                            {v.pending && <Badge bg="warning">⏳ Pending</Badge>}
                           </div>
                         </div>
                         <p className="small mb-2">{v.description}</p>
@@ -1072,8 +1299,8 @@ const AuthorityUploadViolation = () => {
                           <Button size="sm" variant={v.confirmed?"success":"outline-primary"} onClick={()=>toggleConfirm(i)} disabled={v.saved}>
                             {v.confirmed ? <><FaCheck /> Confirmed</> : 'Confirm'}
                           </Button>
-                          <Button size="sm" variant="outline-success" onClick={()=>saveViolation(i)} disabled={!v.confirmed||v.saved}>
-                            <FaSave className="me-1" /> {v.saved ? 'Saved' : 'Save'}
+                          <Button size="sm" variant="outline-success" onClick={()=>saveViolation(i)} disabled={!v.confirmed || v.saved}>
+                            <FaSave className="me-1" /> {v.saved ? (v.pending ? 'Pending Sync' : 'Saved') : 'Save'}
                           </Button>
                         </div>
                       </div>
@@ -1091,7 +1318,7 @@ const AuthorityUploadViolation = () => {
                 <div className="mb-2">🏍️ <strong>Triple Riding:</strong> ₹2,000 • Section 128</div>
                 <div className="mb-2">🚛 <strong>Overloading:</strong> ₹5,000 • Section 113</div>
                 <div className="mt-3 p-2 bg-info bg-opacity-10 rounded">
-                  <small><strong>Note:</strong> Confirm then Save violations to add them to records.</small>
+                  <small><strong>Note:</strong> Confirm then Save violations to add them to records. If backend is unavailable, violations will be saved locally and synced automatically.</small>
                 </div>
               </Card.Body>
             </Card>
