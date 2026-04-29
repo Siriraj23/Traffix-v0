@@ -17,12 +17,63 @@ const Profile = () => {
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
+  
+  // ========== NEW: Stats calculated from violations data ==========
+  const [calculatedStats, setCalculatedStats] = useState({
+    totalViolations: 0,
+    pendingViolations: 0,
+    resolvedViolations: 0,
+    pendingFines: 0,
+    paidFines: 0
+  });
 
   const userRole = localStorage.getItem('userRole');
   const isAdmin = userRole === 'admin';
 
+  // ===== Function to calculate stats from violations =====
+  const calculateStatsFromViolations = (violationsList) => {
+    const safeList = ensureArray(violationsList);
+    
+    const totalViolations = safeList.length;
+    
+    const pendingViolationsList = safeList.filter(v => 
+      (v.status || '').toLowerCase() !== 'fined' && 
+      (v.status || '').toLowerCase() !== 'paid' && 
+      (v.status || '').toLowerCase() !== 'resolved'
+    );
+    
+    const resolvedViolationsList = safeList.filter(v => 
+      (v.status || '').toLowerCase() === 'fined' || 
+      (v.status || '').toLowerCase() === 'paid' || 
+      (v.status || '').toLowerCase() === 'resolved'
+    );
+    
+    const getViolationFine = (violation) => {
+      if (!violation) return 0;
+      return violation.fineAmount || violation.fine || violation.violationData?.fineAmount || violation.fine_amount || getFineAmount(violation.type || violation.violationType) || 0;
+    };
+    
+    const pendingFines = isAdmin ? 0 : pendingViolationsList.reduce((sum, v) => sum + getViolationFine(v), 0);
+    const paidFines = isAdmin ? 0 : resolvedViolationsList.reduce((sum, v) => sum + getViolationFine(v), 0);
+    
+    setCalculatedStats({
+      totalViolations,
+      pendingViolations: pendingViolationsList.length,
+      resolvedViolations: resolvedViolationsList.length,
+      pendingFines,
+      paidFines
+    });
+    
+    console.log('📊 Profile Stats Calculated:', {
+      total: totalViolations,
+      pending: pendingViolationsList.length,
+      resolved: resolvedViolationsList.length,
+      pendingFines,
+      paidFines
+    });
+  };
+
   // ===== FETCH VIOLATIONS - Reads from API AND localStorage =====
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const fetchUserViolations = useCallback(async (vehicleNo, adminStatus) => {
     try {
       const targetVehicle = vehicleNo || user?.vehicleNumber;
@@ -31,9 +82,9 @@ const Profile = () => {
       
       // Try API first
       try {
-        const response = await violationsAPI.getAll({ limit: 100 });
+        const response = await violationsAPI.getAll({ limit: 10000 });
         if (response && response.success) {
-          allViolations = ensureArray(response.violations || response.data || response);
+          allViolations = ensureArray(response.violations || response.data?.violations || response.data?.data || response.data || response);
           console.log('✅ Profile: API violations found:', allViolations.length);
         }
       } catch (apiErr) {
@@ -56,7 +107,7 @@ const Profile = () => {
           if (!exists) {
             console.log('➕ Profile: Adding local violation:', v.type, v.vehicleNumber);
             allViolations.push({
-              _id: v._id || `local_${Date.now()}`,
+              _id: v._id || `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               violationId: v.violationId || `LOC-${Date.now()}`,
               vehicleNumber: v.vehicleNumber || v.violationData?.vehicleNumber || 'Unknown',
               type: v.type || v.violationData?.type || 'Unknown',
@@ -84,12 +135,24 @@ const Profile = () => {
         console.log('🔍 Profile: Filtered for vehicle', targetVehicle, '- found:', allViolations.length);
       }
       
+      // Sort by date (newest first)
+      allViolations.sort((a, b) => {
+        const dateA = new Date(a.timestamp || a.createdAt || a.savedAt || 0);
+        const dateB = new Date(b.timestamp || b.createdAt || b.savedAt || 0);
+        return dateB - dateA;
+      });
+      
       setViolations(allViolations);
+      
+      // ========== CALCULATE STATS FROM ALL VIOLATIONS ==========
+      calculateStatsFromViolations(allViolations);
+      
     } catch (err) {
       console.error('Profile: Fetch error:', err);
       setViolations([]);
+      calculateStatsFromViolations([]);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user?.vehicleNumber, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initial load
   useEffect(() => {
@@ -157,19 +220,9 @@ const Profile = () => {
   };
 
   const violationsList = ensureArray(violations);
-  const totalViolations = violationsList.length;
-  const pendingViolations = violationsList.filter(v => 
-    (v.status || '').toLowerCase() !== 'fined' && 
-    (v.status || '').toLowerCase() !== 'paid' && 
-    (v.status || '').toLowerCase() !== 'resolved'
-  );
-  const resolvedViolations = violationsList.filter(v => 
-    (v.status || '').toLowerCase() === 'fined' || 
-    (v.status || '').toLowerCase() === 'paid' || 
-    (v.status || '').toLowerCase() === 'resolved'
-  );
-  const pendingFines = isAdmin ? 0 : pendingViolations.reduce((sum, v) => sum + getViolationFine(v), 0);
-  const paidFines = isAdmin ? 0 : resolvedViolations.reduce((sum, v) => sum + getViolationFine(v), 0);
+  
+  // Use calculated stats instead of computing inline
+  const { totalViolations, pendingViolations: pendingCount, resolvedViolations: resolvedCount, pendingFines, paidFines } = calculatedStats;
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
@@ -234,6 +287,7 @@ const Profile = () => {
                     <div>
                       <h3 className="stat-value mb-0">{totalViolations}</h3>
                       <p className="stat-label text-muted mb-0">Total Violations</p>
+                      <small className="text-muted">From all records</small>
                     </div>
                   </Card.Body>
                 </Card>
@@ -255,7 +309,7 @@ const Profile = () => {
                         <div>
                           <h3 className="stat-value mb-0">₹{pendingFines.toLocaleString('en-IN')}</h3>
                           <p className="stat-label text-muted mb-0">Pending Fines</p>
-                          <small className="text-muted">({pendingViolations.length} pending)</small>
+                          <small className="text-muted">({pendingCount} pending violations)</small>
                         </div>
                       </Card.Body>
                     </Card>
@@ -275,7 +329,7 @@ const Profile = () => {
                         <div>
                           <h3 className="stat-value mb-0">₹{paidFines.toLocaleString('en-IN')}</h3>
                           <p className="stat-label text-muted mb-0">Paid Fines</p>
-                          <small className="text-muted">({resolvedViolations.length} resolved)</small>
+                          <small className="text-muted">({resolvedCount} resolved violations)</small>
                         </div>
                       </Card.Body>
                     </Card>
@@ -297,8 +351,9 @@ const Profile = () => {
                           <FaClock />
                         </div>
                         <div>
-                          <h3 className="stat-value mb-0">{pendingViolations.length}</h3>
+                          <h3 className="stat-value mb-0">{pendingCount}</h3>
                           <p className="stat-label text-muted mb-0">Pending Cases</p>
+                          <small className="text-muted">Awaiting action</small>
                         </div>
                       </Card.Body>
                     </Card>
@@ -316,8 +371,9 @@ const Profile = () => {
                           <FaCheckCircle />
                         </div>
                         <div>
-                          <h3 className="stat-value mb-0">{resolvedViolations.length}</h3>
+                          <h3 className="stat-value mb-0">{resolvedCount}</h3>
                           <p className="stat-label text-muted mb-0">Resolved Cases</p>
+                          <small className="text-muted">Completed</small>
                         </div>
                       </Card.Body>
                     </Card>

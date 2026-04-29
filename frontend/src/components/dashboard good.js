@@ -46,6 +46,7 @@ ChartJS.register(
   Filler
 );
 
+// Storage key for saved violations
 const SAVED_VIOLATIONS_KEY = 'traffic_saved_violations';
 
 const Dashboard = () => {
@@ -59,24 +60,194 @@ const Dashboard = () => {
     pendingReview: 0,
     totalFines: 0
   });
-  const [byType, setByType] = useState([]);
   const [recentViolations, setRecentViolations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [dailyData, setDailyData] = useState([]);
   const [retryCount, setRetryCount] = useState(0);
+  
+  // Violations data for charts - calculated from ALL violations
+  const [violationsChartData, setViolationsChartData] = useState({
+    labels: ['Helmet Violation', 'Triple Riding', 'Overloading'],
+    datasets: [{
+      label: 'Number of Violations',
+      data: [0, 0, 0],
+      backgroundColor: [
+        'rgba(255, 99, 132, 0.7)',
+        'rgba(54, 162, 235, 0.7)',
+        'rgba(255, 206, 86, 0.7)'
+      ],
+      borderColor: [
+        'rgba(255, 99, 132, 1)',
+        'rgba(54, 162, 235, 1)',
+        'rgba(255, 206, 86, 1)'
+      ],
+      borderWidth: 2,
+      borderRadius: 8,
+    }]
+  });
+
+  // 24-hour trend data
+  const [trendChartData, setTrendChartData] = useState({
+    labels: [],
+    datasets: [
+      {
+        label: 'Helmet Violations',
+        data: [],
+        borderColor: 'rgb(255, 99, 132)',
+        backgroundColor: 'rgba(255, 99, 132, 0.1)',
+        tension: 0.4,
+        fill: false,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        borderWidth: 2,
+      },
+      {
+        label: 'Triple Riding',
+        data: [],
+        borderColor: 'rgb(54, 162, 235)',
+        backgroundColor: 'rgba(54, 162, 235, 0.1)',
+        tension: 0.4,
+        fill: false,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        borderWidth: 2,
+      },
+      {
+        label: 'Overloading',
+        data: [],
+        borderColor: 'rgb(255, 206, 86)',
+        backgroundColor: 'rgba(255, 206, 86, 0.1)',
+        tension: 0.4,
+        fill: false,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        borderWidth: 2,
+      }
+    ]
+  });
 
   // ---- Pagination state ----
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
   // -------------------------
 
-  // ========== Function to fetch ALL violations and calculate everything ==========
-  const fetchAllViolationsAndCalculate = useCallback(async () => {
+  // Function to calculate total fines from ALL violations
+  const calculateTotalFines = (violations) => {
+    if (!violations || !Array.isArray(violations)) return 0;
+    return violations.reduce((total, v) => {
+      return total + (v.fineAmount || v.fine || 0);
+    }, 0);
+  };
+
+  // Function to count violations by type from ALL violations
+  const countViolationsByType = (violations) => {
+    if (!violations || !Array.isArray(violations)) {
+      return { no_helmet: 0, triple_riding: 0, overloading: 0 };
+    }
+    
+    const counts = {
+      no_helmet: 0,
+      triple_riding: 0,
+      overloading: 0
+    };
+    
+    violations.forEach(v => {
+      const type = v.type?.toLowerCase();
+      if (type === 'no_helmet') counts.no_helmet++;
+      if (type === 'triple_riding') counts.triple_riding++;
+      if (type === 'overloading') counts.overloading++;
+    });
+    
+    return counts;
+  };
+
+  // Function to process violations data for 24-hour trend chart
+  const processViolationsTrend = (violations) => {
+    if (!violations || !Array.isArray(violations)) return;
+    
+    const now = new Date();
+    const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    
+    // Create hourly intervals for last 24 hours
+    const hourlyData = [];
+    for (let i = 23; i >= 0; i--) {
+      const hourDate = new Date(now.getTime() - i * 60 * 60 * 1000);
+      hourlyData.push({
+        hour: hourDate.getHours(),
+        label: `${String(hourDate.getHours()).padStart(2, '0')}:00`,
+        timestamp: hourDate,
+        helmet: 0,
+        tripleRiding: 0,
+        overloading: 0
+      });
+    }
+    
+    // Process violations into hourly buckets
+    violations.forEach(v => {
+      const vDate = new Date(v.timestamp || v.createdAt || v.savedAt);
+      if (vDate >= last24Hours) {
+        const hourIndex = hourlyData.findIndex(h => {
+          const hDate = new Date(h.timestamp);
+          return vDate.getHours() === hDate.getHours() && 
+                 vDate.getDate() === hDate.getDate() &&
+                 vDate.getMonth() === hDate.getMonth();
+        });
+        
+        if (hourIndex !== -1) {
+          const type = v.type?.toLowerCase();
+          if (type === 'no_helmet') hourlyData[hourIndex].helmet++;
+          else if (type === 'triple_riding') hourlyData[hourIndex].tripleRiding++;
+          else if (type === 'overloading') hourlyData[hourIndex].overloading++;
+        }
+      }
+    });
+    
+    setTrendChartData({
+      labels: hourlyData.map(h => h.label),
+      datasets: [
+        {
+          label: 'Helmet Violations',
+          data: hourlyData.map(h => h.helmet),
+          borderColor: 'rgb(255, 99, 132)',
+          backgroundColor: 'rgba(255, 99, 132, 0.1)',
+          tension: 0.4,
+          fill: false,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 2,
+        },
+        {
+          label: 'Triple Riding',
+          data: hourlyData.map(h => h.tripleRiding),
+          borderColor: 'rgb(54, 162, 235)',
+          backgroundColor: 'rgba(54, 162, 235, 0.1)',
+          tension: 0.4,
+          fill: false,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 2,
+        },
+        {
+          label: 'Overloading',
+          data: hourlyData.map(h => h.overloading),
+          borderColor: 'rgb(255, 206, 86)',
+          backgroundColor: 'rgba(255, 206, 86, 0.1)',
+          tension: 0.4,
+          fill: false,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 2,
+        }
+      ]
+    });
+  };
+
+  // Fetch ALL violations from API and localStorage
+  const fetchAllViolations = useCallback(async () => {
     try {
       let allViolationsArray = [];
       
-      // Fetch ALL violations from API
+      // Fetch from API - try to get all violations
       try {
         const response = await violationsAPI.getAll({ limit: 10000 });
         if (response.success) {
@@ -85,9 +256,8 @@ const Dashboard = () => {
             allViolationsArray = [];
           }
         }
-        console.log(`📊 Fetched ${allViolationsArray.length} violations from API`);
       } catch (apiErr) {
-        console.warn('API fetch failed:', apiErr.message);
+        console.warn('API fetch for all violations failed:', apiErr.message);
       }
       
       // Add saved violations from localStorage
@@ -116,17 +286,43 @@ const Dashboard = () => {
             }
           });
         }
-        console.log(`📊 After adding localStorage: ${allViolationsArray.length} total violations`);
       } catch (e) {
         console.warn('Error reading saved violations:', e);
       }
       
-      // ========== CALCULATE STATS FROM ALL VIOLATIONS ==========
+      console.log(`📊 Total violations fetched: ${allViolationsArray.length}`);
       
-      // 1. Total Violations
-      const totalViolations = allViolationsArray.length;
+      // Calculate total fines from ALL violations
+      const totalFines = calculateTotalFines(allViolationsArray);
       
-      // 2. Today's Violations
+      // Count violations by type for bar chart
+      const typeCounts = countViolationsByType(allViolationsArray);
+      
+      // Update bar chart data with real counts from ALL violations
+      setViolationsChartData({
+        labels: ['Helmet Violation', 'Triple Riding', 'Overloading'],
+        datasets: [{
+          label: 'Number of Violations',
+          data: [typeCounts.no_helmet, typeCounts.triple_riding, typeCounts.overloading],
+          backgroundColor: [
+            'rgba(255, 99, 132, 0.7)',
+            'rgba(54, 162, 235, 0.7)',
+            'rgba(255, 206, 86, 0.7)'
+          ],
+          borderColor: [
+            'rgba(255, 99, 132, 1)',
+            'rgba(54, 162, 235, 1)',
+            'rgba(255, 206, 86, 1)'
+          ],
+          borderWidth: 2,
+          borderRadius: 8,
+        }]
+      });
+      
+      // Process 24-hour trend data
+      processViolationsTrend(allViolationsArray);
+      
+      // Update stats with calculated values
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       const todayViolations = allViolationsArray.filter(v => {
@@ -134,55 +330,20 @@ const Dashboard = () => {
         return vDate >= todayStart;
       }).length;
       
-      // 3. Pending Review
       const pendingReview = allViolationsArray.filter(v => 
         v.status?.toLowerCase() === 'pending' || v.status?.toLowerCase() === 'detected'
       ).length;
       
-      // 4. Total Fines - Sum from all violations
-      const totalFines = allViolationsArray.reduce((total, v) => {
-        return total + (v.fineAmount || v.fine || 0);
-      }, 0);
-      
-      console.log(`📊 Stats calculated - Total: ${totalViolations}, Today: ${todayViolations}, Pending: ${pendingReview}, Fines: ${totalFines}`);
-      
-      // Update stats
-      setStats({
-        totalViolations,
-        todayViolations,
-        pendingReview,
-        totalFines
-      });
-      
-      // ========== CALCULATE BAR GRAPH DATA (Only 3 types) ==========
-      const typeCounts = {
-        no_helmet: 0,
-        triple_riding: 0,
-        overloading: 0
-      };
-      
-      allViolationsArray.forEach(v => {
-        const type = v.type?.toLowerCase();
-        if (type === 'no_helmet') typeCounts.no_helmet++;
-        if (type === 'triple_riding') typeCounts.triple_riding++;
-        if (type === 'overloading') typeCounts.overloading++;
-      });
-      
-      console.log(`📊 Bar graph data - Helmet: ${typeCounts.no_helmet}, Triple: ${typeCounts.triple_riding}, Overloading: ${typeCounts.overloading}`);
-      
-      // Update byType for bar graph
-      setByType([
-        { _id: 'no_helmet', count: typeCounts.no_helmet },
-        { _id: 'triple_riding', count: typeCounts.triple_riding },
-        { _id: 'overloading', count: typeCounts.overloading }
-      ]);
-      
-      // ========== GENERATE DAILY TREND DATA ==========
-      generateDailyData(allViolationsArray);
+      setStats(prev => ({
+        totalViolations: allViolationsArray.length,
+        todayViolations: todayViolations,
+        pendingReview: pendingReview,
+        totalFines: totalFines
+      }));
       
       return allViolationsArray;
     } catch (err) {
-      console.error('Error in fetchAllViolationsAndCalculate:', err);
+      console.error('Error in fetchAllViolations:', err);
       return [];
     }
   }, []);
@@ -195,83 +356,72 @@ const Dashboard = () => {
       
       console.log(`📊 Fetching dashboard data... (Attempt ${retryCount + 1})`);
       
-      // First fetch all violations and calculate everything
-      const allViolations = await fetchAllViolationsAndCalculate();
+      const response = await dashboardAPI.getStats();
+      console.log('✅ API Response:', response);
       
-      // Then try to get backend stats (for backup/verification)
-      try {
-        const response = await dashboardAPI.getStats();
-        console.log('✅ API Response:', response);
+      if (response && response.success) {
+        const responseData = response.data || response;
         
-        if (response && response.success) {
-          const responseData = response.data || response;
-          
-          // Only use backend stats if they have more data
-          if ((responseData.stats?.totalViolations || 0) > allViolations.length) {
-            setStats(prev => ({
-              ...prev,
-              totalViolations: responseData.stats?.totalViolations || prev.totalViolations,
-              todayViolations: responseData.stats?.todayViolations || prev.todayViolations,
-              pendingReview: responseData.stats?.pendingReview || prev.pendingReview,
-            }));
-          }
-        }
-      } catch (apiErr) {
-        console.warn('Backend API call failed, using violation data:', apiErr.message);
-      }
-      
-      // Fetch recent violations for table
-      let recentData = [];
-      try {
+        setStats(prev => ({
+          totalViolations: responseData.stats?.totalViolations || prev.totalViolations,
+          todayViolations: responseData.stats?.todayViolations || prev.todayViolations,
+          pendingReview: responseData.stats?.pendingReview || prev.pendingReview,
+          totalFines: prev.totalFines // Will be updated by fetchAllViolations
+        }));
+        
+        // Fetch recent violations for table display
         const recentResponse = await dashboardAPI.getRecentViolations(10);
+        let recentData = [];
+        
         if (recentResponse.success) {
           recentData = recentResponse.data?.data || recentResponse.data || [];
           if (!Array.isArray(recentData)) {
             recentData = recentResponse.data?.violations || [];
           }
         }
-      } catch (recentErr) {
-        console.warn('Failed to fetch recent violations:', recentErr.message);
-        // Use last 10 from all violations
-        recentData = allViolations.slice(-10).reverse();
-      }
-      
-      // Add saved violations from localStorage to recent data
-      try {
-        const savedViolations = JSON.parse(localStorage.getItem(SAVED_VIOLATIONS_KEY) || '[]');
-        if (Array.isArray(savedViolations)) {
-          savedViolations.slice(-5).forEach(v => {
-            const exists = recentData.find(rv => 
-              (rv.vehicleNumber === v.vehicleNumber) && 
-              (rv.type === v.type)
-            );
-            if (!exists) {
-              recentData.push({
-                _id: v._id || `local_${Date.now()}`,
-                violationId: v.violationId || `LOC-${Date.now()}`,
-                type: v.type,
-                vehicleNumber: v.vehicleNumber,
-                fineAmount: v.fineAmount || v.fine || 1000,
-                confidence: v.confidence || 0.85,
-                status: v.status || 'detected',
-                timestamp: v.savedAt || v.timestamp || new Date().toISOString(),
-                createdAt: v.savedAt || new Date().toISOString(),
-                isSaved: true
-              });
-            }
-          });
+        
+        // Add saved violations from localStorage for recent data
+        try {
+          const savedViolations = JSON.parse(localStorage.getItem(SAVED_VIOLATIONS_KEY) || '[]');
+          if (Array.isArray(savedViolations)) {
+            savedViolations.forEach(v => {
+              const exists = recentData.find(rv => 
+                (rv.vehicleNumber === v.vehicleNumber) && 
+                (rv.type === v.type)
+              );
+              if (!exists) {
+                recentData.push({
+                  _id: v._id || `local_${Date.now()}`,
+                  violationId: v.violationId || `LOC-${Date.now()}`,
+                  type: v.type,
+                  vehicleNumber: v.vehicleNumber,
+                  fineAmount: v.fineAmount || v.fine || 1000,
+                  confidence: v.confidence || 0.85,
+                  status: v.status || 'detected',
+                  timestamp: v.savedAt || v.timestamp || new Date().toISOString(),
+                  createdAt: v.savedAt || new Date().toISOString(),
+                  isSaved: true
+                });
+              }
+            });
+          }
+        } catch (e) {
+          console.warn('Error reading saved violations:', e);
         }
-      } catch (e) {
-        console.warn('Error reading saved violations:', e);
+        
+        setRecentViolations(Array.isArray(recentData) ? recentData : []);
+        setCurrentPage(1);
+        
+        // Fetch ALL violations for calculations and chart data
+        await fetchAllViolations();
+        
+        window.dispatchEvent(new CustomEvent('dashboardDataLoaded', { 
+          detail: responseData 
+        }));
+        
+      } else {
+        throw new Error(response?.error || 'Failed to load dashboard data');
       }
-      
-      setRecentViolations(Array.isArray(recentData) ? recentData : []);
-      setCurrentPage(1);
-      
-      window.dispatchEvent(new CustomEvent('dashboardDataLoaded', { 
-        detail: { violations: allViolations }
-      }));
-      
     } catch (err) {
       console.error('❌ Dashboard Error:', err);
       
@@ -285,33 +435,7 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [retryCount, fetchAllViolationsAndCalculate]);
-
-  // Generate daily trend data
-  const generateDailyData = (violations) => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const today = new Date();
-    const last7Days = [];
-    
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      last7Days.push({
-        day: days[date.getDay()],
-        date: date.toDateString(),
-        count: 0
-      });
-    }
-    
-    violations.forEach(v => {
-      const vDate = new Date(v.timestamp || v.createdAt || v.savedAt);
-      const vDateStr = vDate.toDateString();
-      const dayData = last7Days.find(d => d.date === vDateStr);
-      if (dayData) dayData.count++;
-    });
-    
-    setDailyData(last7Days);
-  };
+  }, [retryCount, fetchAllViolations]);
 
   // Load data on component mount
   useEffect(() => {
@@ -359,18 +483,21 @@ const Dashboard = () => {
     
     if (window.confirm('Are you sure you want to delete this violation?')) {
       try {
+        // Try API delete
         try {
           await violationsAPI.delete(id);
         } catch (apiErr) {
           console.warn('API delete failed:', apiErr.message);
         }
         
+        // Remove from localStorage
         const savedViolations = JSON.parse(localStorage.getItem(SAVED_VIOLATIONS_KEY) || '[]');
         const filtered = savedViolations.filter(v => 
           v._id !== id && v.violationId !== id
         );
         localStorage.setItem(SAVED_VIOLATIONS_KEY, JSON.stringify(filtered));
         
+        // Update state
         setRecentViolations(prev => prev.filter(v => 
           v._id !== id && v.violationId !== id
         ));
@@ -398,55 +525,6 @@ const Dashboard = () => {
 
   const handleNextPage = () => {
     setCurrentPage(prev => Math.min(prev + 1, totalPages));
-  };
-
-  // ========== BAR GRAPH DATA (Only 3 violation types) ==========
-  const violationTypeLabels = {
-    no_helmet: 'Helmet Violation',
-    triple_riding: 'Triple Riding',
-    overloading: 'Overloading'
-  };
-
-  const barChartColors = [
-    'rgba(255, 99, 132, 0.7)',
-    'rgba(54, 162, 235, 0.7)',
-    'rgba(255, 206, 86, 0.7)'
-  ];
-
-  const barChartBorderColors = [
-    'rgba(255, 99, 132, 1)',
-    'rgba(54, 162, 235, 1)',
-    'rgba(255, 206, 86, 1)'
-  ];
-
-  const violationsChartData = {
-    labels: byType.map(item => violationTypeLabels[item._id] || item._id?.replace(/_/g, ' ') || 'Unknown'),
-    datasets: [{
-      label: 'Number of Violations',
-      data: byType.map(item => item.count || 0),
-      backgroundColor: barChartColors.slice(0, byType.length),
-      borderColor: barChartBorderColors.slice(0, byType.length),
-      borderWidth: 2,
-      borderRadius: 8,
-    }],
-  };
-
-  // ========== DAILY TREND LINE GRAPH DATA ==========
-  const dailyChartData = {
-    labels: dailyData.map(d => d.day),
-    datasets: [{
-      label: 'Violations',
-      data: dailyData.map(d => d.count),
-      borderColor: 'rgb(59, 130, 246)',
-      backgroundColor: 'rgba(59, 130, 246, 0.1)',
-      tension: 0.4,
-      fill: true,
-      pointBackgroundColor: 'rgb(59, 130, 246)',
-      pointBorderColor: '#fff',
-      pointBorderWidth: 2,
-      pointRadius: 6,
-      pointHoverRadius: 8,
-    }],
   };
 
   const chartOptions = {
@@ -515,7 +593,8 @@ const Dashboard = () => {
   };
 
   const getStatusColor = (status) => {
-    switch(status?.toLowerCase()) {
+    if (!status) return 'light';
+    switch(status.toLowerCase()) {
       case 'detected': return 'warning';
       case 'fined': return 'success';
       case 'reviewed': return 'info';
@@ -634,7 +713,7 @@ const Dashboard = () => {
         </Alert>
       )}
 
-      {/* Stats Cards - All calculated from violations data */}
+      {/* Stats Cards */}
       <Row className="g-3 mb-4">
         <Col xl={3} md={6}>
           <Card className="stat-card border-0 shadow-sm h-100">
@@ -645,7 +724,7 @@ const Dashboard = () => {
               <div>
                 <Card.Title className="stat-label text-muted small mb-1">Total Violations</Card.Title>
                 <h2 className="stat-value mb-0">{formatNumber(stats.totalViolations)}</h2>
-                <small className="text-muted">All violations data</small>
+                <small className="text-muted">All time records</small>
               </div>
             </Card.Body>
           </Card>
@@ -659,7 +738,7 @@ const Dashboard = () => {
               <div>
                 <Card.Title className="stat-label text-muted small mb-1">Today's Violations</Card.Title>
                 <h2 className="stat-value mb-0">{formatNumber(stats.todayViolations)}</h2>
-                <small className="text-muted">Since midnight</small>
+                <small className="text-muted">Last 24 hours</small>
               </div>
             </Card.Body>
           </Card>
@@ -673,7 +752,7 @@ const Dashboard = () => {
               <div>
                 <Card.Title className="stat-label text-muted small mb-1">Pending Review</Card.Title>
                 <h2 className="stat-value mb-0">{formatNumber(stats.pendingReview)}</h2>
-                <small className="text-muted">Detected/Pending</small>
+                <small className="text-muted">Awaiting action</small>
               </div>
             </Card.Body>
           </Card>
@@ -699,42 +778,33 @@ const Dashboard = () => {
         <Col lg={6}>
           <Card className="chart-card shadow-sm h-100">
             <Card.Header className="bg-white">
-              <h5 className="mb-0"><FaChartBar className="me-2" />Violations by Type</h5>
+              <h5 className="mb-0"><FaChartBar className="me-2" />Violations by Type (All Violations)</h5>
             </Card.Header>
             <Card.Body>
               <div style={{height: '300px'}}>
-                {byType.length > 0 && byType.some(t => t.count > 0) ? (
-                  <Bar data={violationsChartData} options={chartOptions} />
-                ) : (
-                  <div className="text-center py-5 text-muted">
-                    <FaChartBar size={40} />
-                    <p>No violation data available</p>
-                  </div>
-                )}
+                <Bar data={violationsChartData} options={chartOptions} />
               </div>
-              {byType.length > 0 && (
-                <div className="mt-2 text-muted small text-center">
-                  Helmet: {byType.find(t => t._id === 'no_helmet')?.count || 0} | 
-                  Triple Riding: {byType.find(t => t._id === 'triple_riding')?.count || 0} | 
-                  Overloading: {byType.find(t => t._id === 'overloading')?.count || 0}
-                </div>
-              )}
+              <div className="mt-2 text-muted small text-center">
+                Total: Helmet ({violationsChartData.datasets[0].data[0]}) | 
+                Triple Riding ({violationsChartData.datasets[0].data[1]}) | 
+                Overloading ({violationsChartData.datasets[0].data[2]})
+              </div>
             </Card.Body>
           </Card>
         </Col>
         <Col lg={6}>
           <Card className="chart-card shadow-sm h-100">
             <Card.Header className="bg-white">
-              <h5 className="mb-0"><FaChartLine className="me-2" />Daily Trend (7 Days)</h5>
+              <h5 className="mb-0"><FaChartLine className="me-2" />Violations Trend (24 Hours)</h5>
             </Card.Header>
             <Card.Body>
               <div style={{height: '300px'}}>
-                {dailyData.some(d => d.count > 0) ? (
-                  <Line data={dailyChartData} options={chartOptions} />
+                {trendChartData.labels && trendChartData.labels.length > 0 ? (
+                  <Line data={trendChartData} options={chartOptions} />
                 ) : (
                   <div className="text-center py-5 text-muted">
                     <FaChartLine size={40} />
-                    <p>No data for last 7 days</p>
+                    <p>No trend data available</p>
                   </div>
                 )}
               </div>
